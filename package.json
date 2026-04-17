@@ -1,0 +1,22 @@
+{
+  "name": "clawd",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Custom Pi coding agent — lean, opinionated, multi-agent.",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["./extensions"],
+    "skills": ["./skills"]
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-agent-core": "*",
+    "@mariozechner/pi-ai": "*",
+    "@mariozechner/pi-tui": "*",
+    "@sinclair/typebox": "*"
+  },
+  "dependencies": {
+    "diff": "^8.0.2",
+    "yaml": "^2.8.2"
+  }
+}

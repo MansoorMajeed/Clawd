@@ -1,0 +1,16 @@
+{
+  "name": "tmux-subagent",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "keywords": ["pi-package", "pi-extension", "pi", "tmux", "subagent"],
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-ai": "*",
+    "@mariozechner/pi-tui": "*",
+    "@sinclair/typebox": "*"
+  }
+}

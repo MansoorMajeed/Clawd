@@ -1,0 +1,24 @@
+.PHONY: test lint fmt check build coverage
+
+## Run test suite
+test:
+	./gradlew test
+
+## Run linters (Checkstyle + SpotBugs via Gradle)
+lint:
+	./gradlew check -x test
+
+## Format code (Spotless)
+fmt:
+	./gradlew spotlessApply
+
+## Pre-commit gate: format, lint, test
+check: fmt lint test
+
+## Build the project
+build:
+	./gradlew build -x test
+
+## Run test coverage report
+coverage:
+	./gradlew jacocoTestReport
