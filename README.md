@@ -19,7 +19,7 @@ Pi (main agent, Opus)
 
 ```bash
 npm install -g @mariozechner/pi-coding-agent
-pi install git:github.com/MansoorMajeed/Clawd
+pi install ssh://git@github.com/MansoorMajeed/Clawd
 ```
 
 ## Prerequisites
