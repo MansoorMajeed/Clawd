@@ -9,7 +9,7 @@ This is the foundational plan for the project. Used once at the start. Take your
 
 ## Step 1: Load Context
 
-Read all files in `llm-context/` and `docs/research/` first. Understand what research has already been done and what context exists.
+Read all files in `llm-context/` and any existing research in `.scratch/` first. Understand what research has already been done and what context exists.
 
 ## Step 2: Discussion Phase
 
@@ -62,7 +62,7 @@ Also update CLAUDE.md with the project name, description, and tech stack.
 
 ## Step 5: MVP Plan
 
-Write the plan to `docs/plans/YYYY-MM-DD-mvp.md`. The first task should always be "Configure Makefile and CLAUDE.md" if not done yet.
+Write the plan to `.scratch/plan-YYYY-MM-DD-mvp.md`. The first task should always be "Configure Makefile and CLAUDE.md" if not done yet.
 
 ```markdown
 # MVP Implementation Plan

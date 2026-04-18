@@ -29,11 +29,10 @@ make coverage # test coverage report
 *No context files yet. Created during /plan-init.*
 
 ### Key Directories
-- `docs/plans/` — Implementation plans with `n2c:` annotations
 - `docs/sessions/` — Session handoff files for context continuity
 - `docs/adrs/` — Architecture Decision Records
 - `docs/retros/` — Retrospective outputs
-- `docs/research/` — Research artifacts (gitignored by default)
+- `.scratch/` — Ephemeral agent work (plans, research) — gitignored
 
 ## Conventions
 

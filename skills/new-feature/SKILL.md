@@ -23,7 +23,7 @@ If the feature name has spaces, convert to kebab-case.
 
 ## Step 3: Scoped Plan
 
-Write a focused plan to `docs/plans/YYYY-MM-DD-feat-<feature-name>.md`:
+Write a focused plan to `.scratch/plan-YYYY-MM-DD-feat-<feature-name>.md`:
 
 ```markdown
 # Feature: <feature-name>

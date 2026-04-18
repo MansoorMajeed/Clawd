@@ -17,7 +17,7 @@ git diff main...HEAD --stat
 git diff main...HEAD
 ```
 
-If there's a plan file referenced in recent commits or in `docs/plans/`, read it to understand the intended scope.
+If there's a plan file referenced in recent commits or in `.scratch/`, read it to understand the intended scope.
 
 ## Review Checklist
 
