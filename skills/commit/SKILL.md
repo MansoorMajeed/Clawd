@@ -25,6 +25,9 @@ Create a git commit for the current changes using a concise Conventional Commits
   - File paths or globs should limit which files to commit. If files are specified, only stage/commit those unless the user explicitly asks otherwise.
   - If arguments combine files and instructions, honor both.
 
+- If a pre-commit hook fails, the commit did NOT happen. Fix the issue, re-stage, and create a NEW commit. Do NOT use `--amend` — it would modify the previous commit, potentially destroying unrelated work.
+- Prefer staging specific files over `git add -A` or `git add .`.
+
 ## Steps
 
 1. Infer from the prompt if the user provided specific file paths/globs and/or additional instructions.
