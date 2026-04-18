@@ -9,7 +9,7 @@ For planning subsequent work after the initial MVP — refactors, architecture c
 
 ## Step 1: Load Context
 
-Read `llm-context/architecture.md` first to understand the big picture. Then read relevant files in `llm-context/` and recent plans in `docs/plans/`.
+Read `llm-context/architecture.md` first to understand the big picture. Then read relevant files in `llm-context/` and recent plans in `.scratch/`.
 
 ## Step 2: Discussion
 
@@ -23,7 +23,7 @@ Key questions to discuss:
 
 ## Step 3: Write the Plan
 
-Write to `docs/plans/YYYY-MM-DD-<topic>.md`:
+Write to `.scratch/plan-YYYY-MM-DD-<topic>.md`:
 
 ```markdown
 # [Topic] Plan
@@ -53,7 +53,12 @@ Write to `docs/plans/YYYY-MM-DD-<topic>.md`:
 
 ## Step 4: Annotation Loop
 
-Tell the user to review and add `n2c:` annotations. Iterate until approved.
+Tell the user to review and add `n2c:` annotations. When they say they've reviewed:
+1. **Re-read the file** — annotations live in the file, not in chat
+2. **Discuss each annotation** — respond to every `n2c:` comment, get alignment
+3. **Update the plan** — iterate until approved
+
+Do not skip the discussion step. The annotation loop is a conversation, not a rubber stamp.
 
 ## Step 5: Execute
 
