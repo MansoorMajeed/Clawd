@@ -56,21 +56,13 @@ export default function (pi: ExtensionAPI) {
   // Guard: catch execution intent and remind to discuss/plan first
   pi.on("input", (event) => {
     const text = event.text?.toLowerCase() ?? "";
-    const executeKeywords = [
-      "implement",
-      "build",
-      "create",
-      "add feature",
-      "write the code",
-      "code this",
-      "make it",
-      "set up",
-      "wire up",
-      "hook up",
-      "refactor",
-      "migrate",
-    ];
-    const hasExecuteIntent = executeKeywords.some((k) => text.includes(k));
+
+    // Skip questions — they're discussion, not execution
+    if (text.includes("?")) return { action: "continue" as const };
+    const questionStarts = /^\s*(how|what|why|can|could|would|should|is|does|do|where|when|which)\b/;
+    if (questionStarts.test(text)) return { action: "continue" as const };
+
+    // Explicit go-ahead bypasses the guard
     const hasBypass =
       text.includes("just do it") ||
       text.includes("skip plan") ||
@@ -78,8 +70,23 @@ export default function (pi: ExtensionAPI) {
       text.includes("go ahead") ||
       text.includes("implement it") ||
       text.includes("do it");
+    if (hasBypass) return { action: "continue" as const };
 
-    if (hasExecuteIntent && !hasBypass) {
+    // Only check the first ~50 chars for execution keywords (imperative commands front-load the verb)
+    const head = text.slice(0, 50);
+    const executeKeywords = [
+      "implement",
+      "build",
+      "write the code",
+      "code this",
+      "wire up",
+      "hook up",
+      "refactor",
+      "migrate",
+    ];
+    const hasExecuteIntent = executeKeywords.some((k) => head.includes(k));
+
+    if (hasExecuteIntent) {
       return {
         action: "transform" as const,
         text:
