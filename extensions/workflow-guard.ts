@@ -24,9 +24,15 @@ When the user gives the go-ahead to implement:
 1. **No over-engineering.** Three similar lines of code are better than a premature abstraction. No defensive code for scenarios that can't happen. No feature flags. No backwards-compatibility shims. No configurability beyond what was asked. This is your most common failure mode — the user will catch it in plan review, but try to catch it yourself first.
 2. **No unsolicited additions.** Don't add docstrings, comments, type annotations, or error handling to code you didn't change. Don't refactor surrounding code. Don't "improve" things beyond the ask.
 3. **Be concise.** No preamble, no trailing summaries, no restating what you just did. The user can read the diff.
-4. **Distill, don't accumulate.** Research goes into reference docs. Plans go into plan files. Don't dump raw findings into conversation.
+4. **Distill, don't accumulate.** Research goes into \`.research/\`. Plans go into plan files. Don't dump raw findings into conversation.
 5. **Challenge assumptions early.** Bad assumptions kill projects. If something feels wrong, say so immediately. Don't wait until you're debugging.
 6. **Makefile is the universal gate.** All build/test/lint commands go through \`make check\`. Never run language-specific tools directly.
+
+## Research scratch area
+
+\`.research/\` is a gitignored scratch directory for persisting research across sessions.
+Write deeper research to \`.research/YYYY-MM-DD-<slug>.md\`. Quick lookups stay in context.
+Check for existing files before re-researching. Graduate useful bits to \`docs/\` or \`llm-context/\` when ready.
 
 ## Style
 - Concise, engineer-like, direct
