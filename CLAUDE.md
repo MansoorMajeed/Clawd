@@ -6,7 +6,7 @@ Custom Pi coding agent package — lean system prompt, opinionated workflow. Inc
 
 - `extensions/` — Pi extensions (TypeScript)
   - `workflow-guard.ts` — Injects custom system prompt, enforces "no code before plan" rule
-  - `dangerous-command-guard.ts` — Intercepts dangerous Bash commands, requires user confirmation (Pi equivalent of the hook)
+  - `dangerous-command-guard.ts` — Intercepts dangerous Bash commands and git footguns (--amend, -A, --no-verify, -i), requires user confirmation. Directs agent to irreversible-action-checklist skill on block.
   - `handoff.ts` — Generates a context-transfer prompt from the current conversation for a new focused session
   - `internet-search.ts` — Internet search via DuckDuckGo with isolated LLM extraction to prevent prompt injection
   - `answer.ts` — Extracts questions from last assistant message into interactive Q&A interface (`/answer` or `Ctrl+.`)
@@ -23,6 +23,8 @@ Custom Pi coding agent package — lean system prompt, opinionated workflow. Inc
   - `split-fork.ts` — Fork session into a new pane (zellij, tmux, or Ghostty). Auto-detects multiplexer
   - `prompt-editor.ts` — In-editor prompt selector with persistence, history, thinking level toggle
   - `clear.ts` — `/clear` command to reset conversation to blank slate (preserves session file)
+  - `read-before-edit.ts` — Blocks edit calls on files not read/written in current session. Resets after compaction.
+  - `compact-advisor.ts` — Suggests compaction at 150k tokens with task-aware instructions. 5-minute cooldown.
 - `hooks/` — Claude Code hooks (Python/Bash)
   - `dangerous-command-guard.py` — PreToolUse hook that blocks dangerous Bash commands and directs the agent to the irreversible-action-checklist skill
   - `uv-interceptor.sh` — SessionStart hook that redirects `python`, `pip`, `poetry` to `uv` equivalents
@@ -48,7 +50,7 @@ pi install git:github.com/MansoorMajeed/Clawd
 
 ## How it works
 
-The coding agent (Pi + Opus) handles main reasoning with a lean ~500-token system prompt. Extensions provide safety guardrails, interactive tooling, and structured workflows. Skills provide step-by-step guidance for common development tasks.
+The coding agent (Pi + Opus) handles main reasoning with a lean system prompt (~1100 tokens). Extensions provide safety guardrails, interactive tooling, and structured workflows. Skills provide step-by-step guidance for common development tasks.
 
 This is a base package — environment-specific tools (MCP bridges, admin integrations, custom templates) can be layered on top as separate Pi overlay packages.
 
