@@ -30,6 +30,13 @@ const DANGEROUS_PATTERNS: Array<{ pattern: RegExp; description: string }> = [
 	{ pattern: /\bfdisk\b/, description: "fdisk (partition table editor)" },
 	{ pattern: /\bparted\b/, description: "parted (partition editor)" },
 
+	// Git footguns (not destructive, but common mistakes)
+	{ pattern: /\bgit\s+add\s+(-A|--all|\.\s*$)/, description: "git add -A/. (may stage secrets, .env, or binaries — stage specific files instead)" },
+	{ pattern: /\bgit\s+commit\s+.*--amend\b/, description: "git commit --amend (modifies previous commit — prefer creating a new commit)" },
+	{ pattern: /\bgit\s+(rebase|add)\s+.*-i\b/, description: "interactive git flag (-i requires terminal interaction, won't work here)" },
+	{ pattern: /\bgit\s+push\s+.*--no-verify\b/, description: "git push --no-verify (skipping hooks — investigate the hook failure instead)" },
+	{ pattern: /\bgit\s+commit\s+.*--no-verify\b/, description: "git commit --no-verify (skipping hooks — investigate the hook failure instead)" },
+
 	// Permission changes on system paths
 	{ pattern: /\bchmod\s+.*-R\s+777\b/, description: "chmod -R 777 (world-writable recursive)" },
 	{
@@ -190,7 +197,7 @@ export default function (pi: ExtensionAPI) {
 		// Require user confirmation for dangerous commands
 		const confirmed = await ctx.ui.confirm(
 			"Dangerous Command Detected",
-			`${result.description}\n\nCommand: ${command}\n\nIf this is an irreversible action, consider using the irreversible-action-checklist skill first.`
+			`${result.description}\n\nCommand: ${command}\n\nIf this is an irreversible action, load and follow the irreversible-action-checklist skill before retrying.`
 		);
 
 		if (confirmed) {
@@ -199,7 +206,7 @@ export default function (pi: ExtensionAPI) {
 
 		return {
 			block: true,
-			reason: `Command blocked: ${result.description}. Consider using the irreversible-action-checklist skill before retrying.`,
+			reason: `Command blocked: ${result.description}. Before retrying: load and follow the irreversible-action-checklist skill. Do not retry without completing the checklist.`,
 		};
 	});
 }
