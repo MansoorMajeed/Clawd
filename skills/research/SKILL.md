@@ -5,49 +5,66 @@ description: Research a topic and distill into reference docs. Use 'deep' for pa
 
 # Research & Distillation
 
-You are in research mode. Your goal is to gather information and distill it into clean reference docs — NOT to write code.
+Your goal is to gather information and distill it into clean reference material — NOT to write code.
 
-## Step 1: Scope the Research
+## When to persist vs. keep in context
 
-Ask the user what they need to learn. Break it into 3-5 specific research questions.
-Be precise — "how does X work" is better than "learn about X".
+**Persist to `.research/`** when:
+- The research is for an ongoing feature/change that spans multiple sessions
+- You queried multiple sources and synthesized a non-trivial answer
+- The user explicitly asks to save the research
+- Deep mode research (always persist)
 
-## Step 2: Dispatch Research
+**Keep in context only** when:
+- Quick single-source lookup ("what's the API for X?")
+- The answer is a few lines that the user will act on immediately
 
-Use available research tools (web search, documentation, internal sources if available) to investigate each question. Make a separate call per question.
+## How to research
 
-- **Quick mode (default):** One research call per question.
-- **Deep mode (if user says "deep"):** Check multiple sources per question for comprehensive coverage.
+1. **Scope it.** Understand what the user needs. Break complex topics into specific questions yourself — don't ask the user to do it.
+2. **Dispatch.** Use available research tools (web search, docs, internal sources, subagents) to investigate.
+   - **Default:** One call per question, sequential.
+   - **Deep mode** (user says "deep"): Multiple sources per question, parallel where possible. Use subagents for fan-out.
+3. **Synthesize.** Merge findings, flag contradictions, distill into a clean summary.
 
-Return a **structured summary**, not raw output.
-Include: key findings, source links, code examples if relevant, open questions.
+## Writing research files
 
-## Step 3: Synthesize
+Write to `.research/YYYY-MM-DD-<slug>.md`. The slug should be descriptive enough to scan in `ls`.
 
-Collect all results. Then:
-1. Merge overlapping findings
-2. Flag any contradictions between sources
-3. Write distilled docs to `docs/research/YYYY-MM-DD-<topic>.md`
+Keep the format simple:
 
-Each research doc should include:
-- **Title and date**
-- **Research questions** (what we set out to learn)
-- **Key findings** (organized by question)
-- **Source links** (where each finding came from)
-- **Open questions** (what we still don't know)
-- **Promotion candidates** (what might belong in `llm-context/`)
+```markdown
+# <Title>
+Date: YYYY-MM-DD
+Context: <one-line — what feature/change this supports>
 
-## Step 4: Promote to llm-context
+<distilled content — findings, code examples, source links, open questions>
+```
 
-Ask the user: which findings (if any) should be promoted to `llm-context/` as permanent project context?
+No elaborate frontmatter. The value is in the content.
 
-For promoted content:
-- Copy/move the relevant sections to `llm-context/<descriptive-name>.md`
-- Update CLAUDE.md to reference the new file
-- Keep the full research doc in `docs/research/` as the detailed record
+### Checking for existing research
 
-## Important Reminders
+If `.research/` exists and is non-empty, scan filenames before starting. Prior research may already answer part of the question — read relevant files to avoid re-deriving known information.
 
-- This context WILL be exhausted by research. That's fine — the goal is the distilled docs.
-- The next phase (planning) starts with a fresh context and reads these docs.
-- Do NOT start writing code. Research mode is research only.
+## Promoting research to permanent docs
+
+After research is complete, ask: should any of this graduate to `llm-context/` or `docs/`?
+
+- Cherry-pick the useful bits — don't copy the whole research file
+- Research files in `.research/` are scratch; committed docs are curated
+- Clean up `.research/` files when they've served their purpose
+
+## Setup
+
+`.research/` should be gitignored globally so it works in any repo without per-repo config:
+
+```bash
+echo '.research/' >> ~/.gitignore_global
+git config --global core.excludesFile ~/.gitignore_global
+```
+
+## Reminders
+
+- Research mode is research only. Do NOT start writing code.
+- This context WILL be exhausted by research. That's expected — the distilled files survive for the next session.
