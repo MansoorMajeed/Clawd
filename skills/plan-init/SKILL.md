@@ -21,6 +21,7 @@ Have a real conversation with the user:
 - What are you unsure about?
 - What assumptions are you making? (Challenge these.)
 - What could go wrong?
+- **Test your mental model:** What is your understanding of how the key technologies/platforms/services work? Is that understanding verified, or assumed from training data? The more work that depends on an assumption, the more it's worth confirming before building on it.
 
 Don't rush this. Ask hard questions. Surface risks. This phase can take 30 minutes or several hours — that's fine. Bad assumptions caught here save days of wasted work.
 
