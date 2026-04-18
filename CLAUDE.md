@@ -22,6 +22,7 @@ Custom Pi coding agent package — lean system prompt, opinionated workflow. Inc
   - `notify.ts` — Native desktop notifications (OSC 777) when the agent finishes
   - `split-fork.ts` — Fork session into a new pane (zellij, tmux, or Ghostty). Auto-detects multiplexer
   - `prompt-editor.ts` — In-editor prompt selector with persistence, history, thinking level toggle
+  - `clear.ts` — `/clear` command to reset conversation to blank slate (preserves session file)
 - `hooks/` — Claude Code hooks (Python/Bash)
   - `dangerous-command-guard.py` — PreToolUse hook that blocks dangerous Bash commands and directs the agent to the irreversible-action-checklist skill
   - `uv-interceptor.sh` — SessionStart hook that redirects `python`, `pip`, `poetry` to `uv` equivalents

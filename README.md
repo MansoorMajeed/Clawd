@@ -11,8 +11,8 @@ A Pi package that replaces Claude Code's 35k-token generic system prompt with a 
 ```
 Pi (main agent, Opus)
 ├── 10 built-in tools (file, bash, glob, grep, etc.)
-├── 18 workflow extensions (safety, editing, review, context, sub-agents)
-└── 22 workflow skills (/plan, /ship, /debug, etc.)
+├── 19 workflow extensions (safety, editing, review, context, sub-agents)
+└── 21 workflow skills (/plan, /ship, /debug, etc.)
 ```
 
 ## Install
