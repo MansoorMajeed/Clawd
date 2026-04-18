@@ -27,7 +27,7 @@ Custom Pi coding agent package — lean system prompt, opinionated workflow. Inc
   - `uv-interceptor.sh` — SessionStart hook that redirects `python`, `pip`, `poetry` to `uv` equivalents
   - `intercepted-commands/` — Shims for pip, pip3, poetry, python, python3
 - `skills/` — Pi skills (Markdown, one SKILL.md per directory)
-  - **Workflow** (11): research (distill into `.research/` scratch area, gitignored), plan-init, plan, new-feature, debug, review, ship, retro, save-session, update-docs, audit-context
+  - **Workflow** (11): research (distill into `.scratch/`, gitignored), plan (write to `.scratch/`, n2c annotation loop), plan-init, new-feature, debug, review, ship, retro, save-session, update-docs, audit-context
   - **Safety**: irreversible-action-checklist (5-gate verification for destructive actions)
   - **Git**: commit (Conventional Commits-style workflow)
   - **Interactive**: web-browser (Chrome DevTools Protocol automation), tmux (remote control tmux sessions)
