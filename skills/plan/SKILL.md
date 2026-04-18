@@ -20,6 +20,7 @@ Key questions to discuss:
 - If this changes the architecture, we need to update `llm-context/architecture.md` as part of the plan
 - What's the simplest way to achieve this?
 - What could break?
+- **Test your mental model:** What assumptions is this approach built on? Are you sure they're correct, or are you assuming? The more work that depends on an assumption, the more it's worth verifying before writing the plan.
 
 ## Step 3: Write the Plan
 

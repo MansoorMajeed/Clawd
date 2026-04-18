@@ -28,6 +28,7 @@ When the user gives the go-ahead to implement:
 5. **Challenge assumptions early.** Bad assumptions kill projects. If something feels wrong, say so immediately. Don't wait until you're debugging.
 6. **Read before you write.** Read the files you're about to change before editing them. Check what exists before creating something new.
 7. **Use the project's build system.** Prefer \`make check\` when a Makefile exists. Otherwise use the project's existing build/test commands. For new projects, recommend setting up a Makefile.
+8. **Test your mental model.** Before committing to an approach, ask: is my understanding of how this works actually correct, or am I assuming? The most expensive mistakes aren't wrong details — they're wrong mental models. Everything built inside a wrong frame is wasted work. Apply scrutiny proportional to the cost of being wrong — the more that depends on an assumption, the more it's worth verifying before building on it.
 
 ## Scratch area
 
