@@ -66,18 +66,39 @@ Look for:
 - On-call impact: does this change alert behavior or add noise?
 - Incident resilience: would this break during a Sev 0?
 
-## Output Format
+## Output
 
-List findings with severity:
+### Severity levels
 
-- **CRITICAL** — Must fix. Security issues, data loss risk, correctness bugs.
-- **IMPORTANT** — Should fix. Logic errors, missing error handling, test gaps.
-- **MINOR** — Consider fixing. Style, naming, minor simplification opportunities.
+- **[P1]** — Must fix. Security issues, data loss risk, correctness bugs.
+- **[P2]** — Should fix. Logic errors, missing error handling, test gaps, regressions.
+- **[P3]** — Consider fixing. Style, naming, minor simplification opportunities.
 
-For each finding:
+### Format for each finding
+
 ```
-[SEVERITY] file:line — Description of the issue
-  Suggestion: What to do instead
+### N. [P1/P2/P3] Short description — `file:line`
+
+Explain the problem. Show the problematic code if helpful.
+
+**Fix:** What to do instead (with code suggestion if applicable).
 ```
 
 **Be direct and specific.** Don't soften feedback. The goal is to catch problems, not to be polite.
+
+### Write the review file
+
+Determine the current branch name:
+```bash
+git branch --show-current
+```
+
+Write findings to `.scratch/review-YYYY-MM-DD-<branch>.md`. This is the exchange point — the implementer reads this file using the `address-review` skill.
+
+The file should contain:
+1. A summary section (what was reviewed, branch, base)
+2. All findings with the format above
+3. A verdict: "Ship it", "Needs attention", or "Needs rework"
+4. A "Human Reviewer Callouts" section for non-blocking items the human should be aware of (dependency changes, permission changes, etc.)
+
+**Also present the findings in conversation** — the review file is for the implementer session, the conversation output is for the current session's user.
