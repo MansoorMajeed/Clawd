@@ -2,6 +2,8 @@
 
 Custom Pi coding agent package — lean system prompt, opinionated workflow. Includes safety guardrails, interactive tooling, and utility skills.
 
+**Important:** When working in this repo, read and edit files relative to the working directory (e.g., `extensions/foo.ts`). Do NOT use `~/.pi/agent/git/github.com/MansoorMajeed/Clawd/` — that's the installed copy, not the source.
+
 ## Structure
 
 - `extensions/` — Pi extensions (TypeScript)
