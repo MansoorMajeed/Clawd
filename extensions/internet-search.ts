@@ -152,9 +152,9 @@ async function extractRelevantInfo(
     throw new Error("No model available for search extraction");
   }
 
-  const apiKey = await ctx.modelRegistry.getApiKey(model);
-  if (!apiKey) {
-    throw new Error("No API key available for search extraction");
+  const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+  if (!auth.ok) {
+    throw new Error(auth.error);
   }
 
   const resultsText = results
@@ -177,7 +177,7 @@ async function extractRelevantInfo(
   const response = await complete(
     model,
     { systemPrompt: EXTRACTION_SYSTEM_PROMPT, messages: [userMessage] },
-    { apiKey, signal }
+    { apiKey: auth.apiKey, headers: auth.headers, signal }
   );
 
   if (response.stopReason === "aborted") {

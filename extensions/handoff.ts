@@ -80,7 +80,10 @@ export default function (pi: ExtensionAPI) {
                 loader.onAbort = () => done(null);
 
                 const doGenerate = async () => {
-                    const apiKey = await ctx.modelRegistry.getApiKey(ctx.model!);
+                    const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model!);
+                    if (!auth.ok) {
+                        throw new Error(auth.error);
+                    }
 
                     const userMessage: Message = {
                         role: "user",
@@ -96,7 +99,7 @@ export default function (pi: ExtensionAPI) {
                     const response = await complete(
                         ctx.model!,
                         { systemPrompt: SYSTEM_PROMPT, messages: [userMessage] },
-                        { apiKey, signal: loader.signal },
+                        { apiKey: auth.apiKey, headers: auth.headers, signal: loader.signal },
                     );
 
                     if (response.stopReason === "aborted") {
