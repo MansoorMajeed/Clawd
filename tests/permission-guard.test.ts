@@ -175,6 +175,10 @@ describe("checkDangerousPattern", () => {
 		expect(checkDangerousPattern("git push --no-verify")).not.toBeNull();
 	});
 
+	it("catches git commit --no-verify", () => {
+		expect(checkDangerousPattern("git commit --no-verify")).not.toBeNull();
+	});
+
 	it("catches git rebase -i", () => {
 		expect(checkDangerousPattern("git rebase -i HEAD~3")).not.toBeNull();
 	});

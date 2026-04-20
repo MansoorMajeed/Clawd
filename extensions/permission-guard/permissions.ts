@@ -160,6 +160,7 @@ const DANGEROUS_PATTERNS: Array<{ pattern: RegExp; description: string }> = [
 	{ pattern: /\bgit\s+add\s+-A\b/, description: "git add -A (stages everything)" },
 	{ pattern: /\bgit\s+add\s+\.\s*$/, description: "git add . (stages everything)" },
 	{ pattern: /\bgit\s+push\s+.*--no-verify\b/, description: "git push --no-verify (skips hooks)" },
+	{ pattern: /\bgit\s+commit\s+.*--no-verify\b/, description: "git commit --no-verify (skips hooks)" },
 	{ pattern: /\bgit\s+rebase\s+.*-i\b/, description: "git rebase -i (interactive rebase, rewrites history)" },
 
 	// Disk / device writes
