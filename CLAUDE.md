@@ -25,6 +25,7 @@ Custom Pi coding agent package — lean system prompt, opinionated workflow. Inc
   - `clear.ts` — `/clear` command to reset conversation to blank slate (preserves session file)
   - `read-before-edit.ts` — Blocks edit calls on files not read/written in current session. Resets after compaction.
   - `compact-advisor.ts` — Suggests compaction at 150k tokens with task-aware instructions. 5-minute cooldown.
+  - `continue.ts` — `/continue` command: writes distilled session state to `.scratch/sessions/`, starts fresh session in same window
 - `skills/` — Pi skills (Markdown, one SKILL.md per directory)
   - **Workflow** (11): research (distill into `.scratch/`, gitignored), plan (write to `.scratch/`, n2c annotation loop), plan-init, new-feature, debug, review, ship, retro, save-session, update-docs, audit-context
   - **Safety**: irreversible-action-checklist (5-gate verification for destructive actions)
