@@ -6,7 +6,7 @@ Custom Pi coding agent package — lean system prompt, opinionated workflow. Inc
 
 - `extensions/` — Pi extensions (TypeScript)
   - `workflow-guard.ts` — Injects custom system prompt, enforces "no code before plan" rule
-  - `dangerous-command-guard.ts` — Intercepts dangerous Bash commands and git footguns (--amend, -A, --no-verify, -i), requires user confirmation. Directs agent to irreversible-action-checklist skill on block.
+  - `permission-guard/` — Default-deny permission system. Scopes file operations to project directory, blocks destructive commands, prompts for outside access. Supports `/add-dir`, `--yolo` bypass, and `.pi/permissions.json` allowlists
   - `handoff.ts` — Generates a context-transfer prompt from the current conversation for a new focused session
   - `internet-search.ts` — Internet search via DuckDuckGo with isolated LLM extraction to prevent prompt injection
   - `answer.ts` — Extracts questions from last assistant message into interactive Q&A interface (`/answer` or `Ctrl+.`)
@@ -25,10 +25,6 @@ Custom Pi coding agent package — lean system prompt, opinionated workflow. Inc
   - `clear.ts` — `/clear` command to reset conversation to blank slate (preserves session file)
   - `read-before-edit.ts` — Blocks edit calls on files not read/written in current session. Resets after compaction.
   - `compact-advisor.ts` — Suggests compaction at 150k tokens with task-aware instructions. 5-minute cooldown.
-- `hooks/` — Claude Code hooks (Python/Bash)
-  - `dangerous-command-guard.py` — PreToolUse hook that blocks dangerous Bash commands and directs the agent to the irreversible-action-checklist skill
-  - `uv-interceptor.sh` — SessionStart hook that redirects `python`, `pip`, `poetry` to `uv` equivalents
-  - `intercepted-commands/` — Shims for pip, pip3, poetry, python, python3
 - `skills/` — Pi skills (Markdown, one SKILL.md per directory)
   - **Workflow** (11): research (distill into `.scratch/`, gitignored), plan (write to `.scratch/`, n2c annotation loop), plan-init, new-feature, debug, review, ship, retro, save-session, update-docs, audit-context
   - **Safety**: irreversible-action-checklist (5-gate verification for destructive actions)
