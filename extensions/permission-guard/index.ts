@@ -23,15 +23,19 @@ interface PermissionsConfig {
 }
 
 async function loadConfig(path: string): Promise<PermissionsConfig> {
+	let raw: string;
 	try {
-		const raw = await readFile(path, "utf8");
-		return JSON.parse(raw);
+		raw = await readFile(path, "utf8");
 	} catch {
 		return {};
 	}
+	return JSON.parse(raw);
 }
 
 function expandTilde(p: string): string {
+	if (p === "~") {
+		return process.env.HOME || "";
+	}
 	if (p.startsWith("~/")) {
 		return resolve(process.env.HOME || "", p.slice(2));
 	}
