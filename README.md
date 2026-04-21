@@ -2,9 +2,11 @@
 
 Custom [Pi](https://github.com/badlogic/pi-mono) coding agent package. Lean, opinionated, multi-agent.
 
-## What this is
+## Why
 
-A Pi package that replaces Claude Code's heavy generic system prompt with a minimal one tuned to a specific workflow. Provides safety guardrails, interactive tooling, and structured workflow skills.
+Stock coding agents ship with massive generic system prompts that try to be everything to everyone. Clawd strips that back — a lean agent built around a [custom system prompt](extensions/workflow-guard.ts) tuned to how I actually work: discussion before code, plans before execution, no unsolicited "improvements."
+
+Built on [Pi](https://lucumr.pocoo.org/2026/1/31/pi/), an open-source coding agent that's designed to be extended rather than configured.
 
 ## Architecture
 
