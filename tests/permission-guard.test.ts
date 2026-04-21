@@ -252,36 +252,36 @@ describe("checkDangerousPattern", () => {
 // ─── Path Checking ───
 
 describe("isPathAllowed", () => {
-	const allowedDirs = ["/Users/mansoora/git/myproject", "/Users/mansoora/git/other-repo"];
-	const allowedPaths = ["/Users/mansoora/.gitconfig", "/Users/mansoora/.ssh/config"];
+	const allowedDirs = ["/Users/testuser/git/myproject", "/Users/testuser/git/other-repo"];
+	const allowedPaths = ["/Users/testuser/.gitconfig", "/Users/testuser/.ssh/config"];
 
 	it("allows path within project directory", () => {
-		expect(isPathAllowed("/Users/mansoora/git/myproject/src/foo.ts", allowedDirs, allowedPaths)).toBe(true);
+		expect(isPathAllowed("/Users/testuser/git/myproject/src/foo.ts", allowedDirs, allowedPaths)).toBe(true);
 	});
 
 	it("allows path at project root", () => {
-		expect(isPathAllowed("/Users/mansoora/git/myproject", allowedDirs, allowedPaths)).toBe(true);
+		expect(isPathAllowed("/Users/testuser/git/myproject", allowedDirs, allowedPaths)).toBe(true);
 	});
 
 	it("allows path in additional directory", () => {
-		expect(isPathAllowed("/Users/mansoora/git/other-repo/README.md", allowedDirs, allowedPaths)).toBe(true);
+		expect(isPathAllowed("/Users/testuser/git/other-repo/README.md", allowedDirs, allowedPaths)).toBe(true);
 	});
 
 	it("allows explicitly allowed path", () => {
-		expect(isPathAllowed("/Users/mansoora/.gitconfig", allowedDirs, allowedPaths)).toBe(true);
+		expect(isPathAllowed("/Users/testuser/.gitconfig", allowedDirs, allowedPaths)).toBe(true);
 	});
 
 	it("denies path outside allowed dirs", () => {
-		expect(isPathAllowed("/Users/mansoora/secrets/api-key.txt", allowedDirs, allowedPaths)).toBe(false);
+		expect(isPathAllowed("/Users/testuser/secrets/api-key.txt", allowedDirs, allowedPaths)).toBe(false);
 	});
 
 	it("denies path that is prefix but not subdir (no traversal)", () => {
-		// /Users/mansoora/git/myproject-evil should NOT match /Users/mansoora/git/myproject
-		expect(isPathAllowed("/Users/mansoora/git/myproject-evil/foo.ts", allowedDirs, allowedPaths)).toBe(false);
+		// /Users/testuser/git/myproject-evil should NOT match /Users/testuser/git/myproject
+		expect(isPathAllowed("/Users/testuser/git/myproject-evil/foo.ts", allowedDirs, allowedPaths)).toBe(false);
 	});
 
 	it("denies home directory itself", () => {
-		expect(isPathAllowed("/Users/mansoora", allowedDirs, allowedPaths)).toBe(false);
+		expect(isPathAllowed("/Users/testuser", allowedDirs, allowedPaths)).toBe(false);
 	});
 
 	it("denies root paths", () => {
@@ -289,7 +289,7 @@ describe("isPathAllowed", () => {
 	});
 
 	it("handles trailing slashes", () => {
-		expect(isPathAllowed("/Users/mansoora/git/myproject/", allowedDirs, allowedPaths)).toBe(true);
+		expect(isPathAllowed("/Users/testuser/git/myproject/", allowedDirs, allowedPaths)).toBe(true);
 	});
 });
 
