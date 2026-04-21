@@ -2,6 +2,7 @@
   "name": "clawd",
   "version": "0.1.0",
   "type": "module",
+  "license": "Apache-2.0",
   "description": "Custom Pi coding agent — lean, opinionated, multi-agent.",
   "keywords": [
     "pi-package"
