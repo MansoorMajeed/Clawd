@@ -76,6 +76,16 @@ pi() {
 | `/summarize` | URL/file to Markdown via markitdown |
 | `/mermaid` | Create/validate Mermaid diagrams |
 
+## MCP support
+
+Pi doesn't have built-in MCP support, but you can add it with [pi-mcp-adapter](https://github.com/nicobailon/pi-mcp-adapter):
+
+```bash
+pi install npm:pi-mcp-adapter
+```
+
+This reads your existing `claude_desktop_config.json` or `mcp.json` and exposes MCP servers as Pi tools. See the [adapter repo](https://github.com/nicobailon/pi-mcp-adapter) for configuration details.
+
 ## Overlay packages
 
 Clawd is designed as a base package. You can layer additional Pi packages on top for environment-specific extensions (e.g., company-specific MCP bridges, admin tools, templates). Pi merges extensions and skills from all installed packages at runtime.
