@@ -29,7 +29,7 @@ Custom Pi coding agent package — lean system prompt, opinionated workflow. Inc
   - `compact-advisor.ts` — Suggests compaction at 150k tokens with task-aware instructions. 5-minute cooldown.
   - `continue.ts` — `/continue` command: writes distilled session state to `.scratch/sessions/`, starts fresh session in same window
 - `skills/` — Pi skills (Markdown, one SKILL.md per directory)
-  - **Workflow** (11): research (distill into `.scratch/`, gitignored), plan (write to `.scratch/`, n2c annotation loop), plan-init, new-feature, debug, review, ship, retro, save-session, update-docs, audit-context
+  - **Workflow** (12): research (distill into `.scratch/research/`), plan (write to `.scratch/plans/`, n2c annotation loop), plan-init, new-feature, debug, review, ship, retro, save-session, update-docs, audit-context, address-review
   - **Safety**: irreversible-action-checklist (5-gate verification for destructive actions)
   - **Git**: commit (Conventional Commits-style workflow)
   - **Interactive**: web-browser (Chrome DevTools Protocol automation), tmux (remote control tmux sessions)
@@ -49,12 +49,10 @@ pi install git:github.com/MansoorMajeed/Clawd
 
 ## How it works
 
-The coding agent (Pi + Opus) handles main reasoning with a lean system prompt (~1100 tokens). Extensions provide safety guardrails, interactive tooling, and structured workflows. Skills provide step-by-step guidance for common development tasks.
+The coding agent (Pi + Opus) handles main reasoning with a minimal system prompt. Extensions provide safety guardrails, interactive tooling, and structured workflows. Skills provide step-by-step guidance for common development tasks.
 
 This is a base package — environment-specific tools (MCP bridges, admin integrations, custom templates) can be layered on top as separate Pi overlay packages.
 
 ## Acknowledgments
-
-Safety guardrails (dangerous-command-guard, irreversible-action-checklist), interactive tooling (web-browser, tmux, answer, todos, handoff, tmux-subagent), and utility skills (commit, improve-skill, frontend-design, perf-optimization-cycle, internet-search) adapted from [Rafael Caricio's agent-stuff](https://github.com/rcaricio/agent-stuff).
 
 Extensions (multi-edit, review, context, session-breakdown, control, btw, loop, notify, prompt-editor) and skills (librarian, summarize, mermaid) from [Armin Ronacher's agent-stuff](https://github.com/mitsuhiko/agent-stuff). The `split-fork` extension is adapted from mitsuhiko's Ghostty-only version to also support zellij and tmux.

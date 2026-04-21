@@ -1,6 +1,6 @@
 ---
 name: address-review
-description: Read and address code review findings from .scratch/review-*.md for the current branch.
+description: Read and address code review findings from .scratch/reviews/ for the current branch.
 ---
 
 # Address Review
@@ -11,9 +11,9 @@ description: Read and address code review findings from .scratch/review-*.md for
 git branch --show-current
 ```
 
-Look for the review file in `.scratch/`:
+Look for the review file in `.scratch/reviews/`:
 ```bash
-ls .scratch/review-*-$(git branch --show-current).md 2>/dev/null
+ls .scratch/reviews/*-$(git branch --show-current).md 2>/dev/null
 ```
 
 If no review file exists, tell the user — there's nothing to address.

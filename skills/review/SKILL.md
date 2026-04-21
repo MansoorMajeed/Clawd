@@ -17,7 +17,7 @@ git diff main...HEAD --stat
 git diff main...HEAD
 ```
 
-If there's a plan file referenced in recent commits or in `.scratch/`, read it to understand the intended scope.
+If there's a plan file referenced in recent commits or in `.scratch/plans/`, read it to understand the intended scope.
 
 ## Review Checklist
 
@@ -93,7 +93,7 @@ Determine the current branch name:
 git branch --show-current
 ```
 
-Write findings to `.scratch/review-YYYY-MM-DD-<branch>.md`. This is the exchange point — the implementer reads this file using the `address-review` skill.
+Write findings to `.scratch/reviews/YYYY-MM-DD-<branch>.md`. This is the exchange point — the implementer reads this file using the `address-review` skill.
 
 The file should contain:
 1. A summary section (what was reviewed, branch, base)

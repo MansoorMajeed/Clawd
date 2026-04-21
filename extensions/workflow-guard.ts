@@ -15,21 +15,19 @@ The only exception is **trivial, obvious requests** — a one-line fix, a rename
 ## Execution mode: Think expensive, execute cheap
 
 When the user gives the go-ahead to implement:
-1. **Plan first for non-trivial changes.** Write the plan as a markdown file in \`.scratch/plan-YYYY-MM-DD-<slug>.md\`. The user will annotate it with \`n2c:\` comments — re-read the file to see them, then discuss each annotation before acting. Iterate until they approve. For trivial or one-shot changes where scope is already clear, skip the plan.
+1. **Plan first for non-trivial changes.** Write the plan as a markdown file in \`.scratch/plans/YYYY-MM-DD-<slug>.md\`. The user will annotate it with \`n2c:\` comments — re-read the file to see them, then discuss each annotation before acting. Iterate until they approve. For trivial or one-shot changes where scope is already clear, skip the plan.
 2. **TDD when it matters.** If the repo has a test suite and you're changing behavior that could regress: write the failing test first, then make it pass. Every test must be useful — it tests behavior and prevents real regressions. Do NOT write tests that just mirror the implementation, assert a function calls another function, or exist for the sake of coverage. Skip tests entirely for scaffolding, config, extensions, scripts, and anything without existing test infrastructure.
 3. **Commits are atomic.** One concern per commit. Concise message focused on the "why."
 4. **Parallelize independent tool calls.** When calling multiple tools with no dependencies between them, call them in the same message. Don't serialize independent operations.
 
 ## Non-negotiable rules
 
-1. **No over-engineering.** Three similar lines of code are better than a premature abstraction. No defensive code for scenarios that can't happen. No feature flags. No backwards-compatibility shims. No configurability beyond what was asked. This is your most common failure mode — the user will catch it in plan review, but try to catch it yourself first.
+1. **No over-engineering.** Don't abstract, configure, or future-proof beyond what was asked. Three similar lines beat a premature abstraction.
 2. **No unsolicited additions.** Don't add docstrings, comments, type annotations, or error handling to code you didn't change. Don't refactor surrounding code. Don't "improve" things beyond the ask. In new code, default to no comments — never multi-line comment blocks or docstrings unless the code genuinely needs explanation. Never create README or documentation files unless asked.
-3. **Be concise.** No preamble, no trailing summaries, no restating what you just did. The user can read the diff.
-4. **Distill, don't accumulate.** Raw tool output and research are noise in conversation — they burn context and degrade quality. Write research to \`.scratch/\`, plans to \`.scratch/\`. Future sessions get the insight without re-paying the token cost.
-5. **Challenge assumptions early.** Bad assumptions kill projects. If something feels wrong, say so immediately. Don't wait until you're debugging.
-6. **Read before you write.** Read the files you're about to change before editing them. Check what exists before creating something new.
-7. **Use the project's build system.** Prefer \`make check\` when a Makefile exists. Otherwise use the project's existing build/test commands. For new projects, recommend setting up a Makefile.
-8. **Test your mental model.** Before committing to an approach, ask: is my understanding of how this works actually correct, or am I assuming? The most expensive mistakes aren't wrong details — they're wrong mental models. Everything built inside a wrong frame is wasted work. Apply scrutiny proportional to the cost of being wrong — the more that depends on an assumption, the more it's worth verifying before building on it.
+3. **Distill, don't accumulate.** Raw tool output and research are noise in conversation — they burn context and degrade quality. Write research to \`.scratch/research/\`, plans to \`.scratch/plans/\`. Future sessions get the insight without re-paying the token cost.
+4. **Test your mental model.** Before committing to an approach — especially during planning and early discussions — ask: is my understanding actually correct, or am I assuming? The most expensive mistakes aren't wrong details — they're wrong mental models. Everything built inside a wrong frame is wasted work. If something feels off, say so immediately. Don't wait until you're debugging.
+5. **Read before you write.** Read the files you're about to change before editing them. Check what exists before creating something new.
+6. **Use the project's build system.** Prefer \`make check\` when a Makefile exists. Otherwise use the project's existing build/test commands. For new projects, recommend setting up a Makefile.
 
 ## Safety & care
 
@@ -43,9 +41,11 @@ One approval doesn't generalize. The user approving a push once doesn't mean all
 
 ## Scratch area
 
-\`.scratch/\` is a gitignored directory for all ephemeral agent work — research, plans, notes. Naming convention:
-- \`research-YYYY-MM-DD-<slug>.md\` — distilled research findings
-- \`plan-YYYY-MM-DD-<slug>.md\` — change plans, iterated with \`n2c:\` annotations
+\`.scratch/\` is a gitignored directory for all ephemeral agent work, organized by type:
+- \`research/\` — distilled research (\`YYYY-MM-DD-<slug>.md\`)
+- \`plans/\` — change plans with \`n2c:\` annotation loop (\`YYYY-MM-DD-<slug>.md\`)
+- \`reviews/\` — code review findings (\`YYYY-MM-DD-<branch>.md\`)
+- \`sessions/\` — session state for \`/continue\` handoffs
 
 Quick lookups stay in context. Deeper research and all plans go to \`.scratch/\`.
 Check for existing files before re-researching. Graduate useful bits to \`docs/\` or \`llm-context/\` when ready.

@@ -9,7 +9,7 @@ For planning subsequent work after the initial MVP — refactors, architecture c
 
 ## Step 1: Load Context
 
-Read `llm-context/architecture.md` first to understand the big picture. Then read relevant files in `llm-context/` and recent plans in `.scratch/`.
+Read `llm-context/architecture.md` first to understand the big picture. Then read relevant files in `llm-context/` and recent plans in `.scratch/plans/`.
 
 ## Step 2: Discussion
 
@@ -24,7 +24,7 @@ Key questions to discuss:
 
 ## Step 3: Write the Plan
 
-Write to `.scratch/plan-YYYY-MM-DD-<topic>.md`:
+Write to `.scratch/plans/YYYY-MM-DD-<topic>.md`:
 
 ```markdown
 # [Topic] Plan

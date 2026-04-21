@@ -4,15 +4,15 @@ Custom [Pi](https://github.com/badlogic/pi-mono) coding agent package. Lean, opi
 
 ## What this is
 
-A Pi package that replaces Claude Code's 35k-token generic system prompt with a ~500-token prompt tuned to a specific workflow. Provides safety guardrails, interactive tooling, and structured workflow skills.
+A Pi package that replaces Claude Code's heavy generic system prompt with a minimal one tuned to a specific workflow. Provides safety guardrails, interactive tooling, and structured workflow skills.
 
 ## Architecture
 
 ```
 Pi (main agent, Opus)
 ├── 10 built-in tools (file, bash, glob, grep, etc.)
-├── 19 workflow extensions (safety, editing, review, context, sub-agents)
-└── 21 workflow skills (/plan, /ship, /debug, etc.)
+├── 21 workflow extensions (safety, editing, review, context, sub-agents)
+└── 22 workflow skills (/plan, /ship, /debug, etc.)
 ```
 
 ## Install
@@ -56,6 +56,7 @@ pi() {
 | `/save-session` | Session handoff |
 | `/update-docs` | Sync llm-context/ with code |
 | `/audit-context` | Full doc audit |
+| `/address-review` | Address findings from `.scratch/reviews/` |
 | `/commit` | Conventional Commits-style git workflow |
 | `/irreversible-action-checklist` | 5-gate verification for destructive actions |
 | `/improve-skill` | Analyze session transcripts to improve skills |
@@ -73,8 +74,6 @@ Clawd is designed as a base package. You can layer additional Pi packages on top
 
 ## Acknowledgments
 
-This package incorporates extensions and skills from two excellent agent toolkits:
-
-- **[Rafael Caricio's agent-stuff](https://github.com/rcaricio/agent-stuff)** — Safety guardrails (dangerous-command-guard, irreversible-action-checklist), interactive tooling (answer, todos, handoff, tmux-subagent), and utility skills (commit, improve-skill, web-browser, tmux, internet-search, frontend-design, perf-optimization-cycle).
+This package incorporates extensions and skills from:
 
 - **[Armin Ronacher's agent-stuff](https://github.com/mitsuhiko/agent-stuff)** — Advanced extensions (multi-edit, review, context, session-breakdown, control, btw, loop, notify, prompt-editor) and utility skills (librarian, summarize, mermaid). The `split-fork` extension is adapted from mitsuhiko's Ghostty-only version to also support zellij and tmux.

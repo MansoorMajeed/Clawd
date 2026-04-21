@@ -9,7 +9,7 @@ Your goal is to gather information and distill it into clean reference material 
 
 ## When to persist vs. keep in context
 
-**Persist to `.scratch/`** when:
+**Persist to `.scratch/research/`** when:
 - The research is for an ongoing feature/change that spans multiple sessions
 - You queried multiple sources and synthesized a non-trivial answer
 - The user explicitly asks to save the research
@@ -29,7 +29,7 @@ Your goal is to gather information and distill it into clean reference material 
 
 ## Writing research files
 
-Write to `.scratch/research-YYYY-MM-DD-<slug>.md`. The slug should be descriptive enough to scan in `ls`.
+Write to `.scratch/research/YYYY-MM-DD-<slug>.md`. The slug should be descriptive enough to scan in `ls`.
 
 Keep the format simple:
 
@@ -45,15 +45,15 @@ No elaborate frontmatter. The value is in the content.
 
 ### Checking for existing research
 
-If `.scratch/` exists and is non-empty, scan filenames before starting. Prior research may already answer part of the question — read relevant files to avoid re-deriving known information.
+If `.scratch/research/` exists and is non-empty, scan filenames before starting. Prior research may already answer part of the question — read relevant files to avoid re-deriving known information.
 
 ## Promoting research to permanent docs
 
 After research is complete, ask: should any of this graduate to `llm-context/` or `docs/`?
 
 - Cherry-pick the useful bits — don't copy the whole research file
-- Research files in `.scratch/` are scratch; committed docs are curated
-- Clean up `.scratch/` files when they've served their purpose
+- Research files in `.scratch/research/` are scratch; committed docs are curated
+- Clean up `.scratch/research/` files when they've served their purpose
 
 ## Setup
 

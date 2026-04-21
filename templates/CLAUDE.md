@@ -32,7 +32,7 @@ make coverage # test coverage report
 - `docs/sessions/` — Session handoff files for context continuity
 - `docs/adrs/` — Architecture Decision Records
 - `docs/retros/` — Retrospective outputs
-- `.scratch/` — Ephemeral agent work (plans, research) — gitignored
+- `.scratch/` — Ephemeral agent work (gitignored): `research/`, `plans/`, `reviews/`, `sessions/`
 
 ## Conventions
 
