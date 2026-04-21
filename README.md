@@ -6,7 +6,13 @@ Custom [Pi](https://github.com/badlogic/pi-mono) coding agent package. Lean, opi
 
 Stock coding agents ship with massive generic system prompts that try to be everything to everyone. Clawd strips that back — a lean agent built around a [custom system prompt](extensions/workflow-guard.ts) tuned to how I actually work: discussion before code, plans before execution, no unsolicited "improvements."
 
-Built on [Pi](https://lucumr.pocoo.org/2026/1/31/pi/), an open-source coding agent that's designed to be extended rather than configured.
+Built on [Pi](https://lucumr.pocoo.org/2026/1/31/pi/), an open-source coding agent that's designed to be extended rather than configured. The system prompt is the soul of this thing — fork it and make it yours.
+
+## ⚠️ Warning
+
+This is **not** a sandboxed agent. Pi gives the LLM direct bash access with no built-in permission system like Claude Code has. The `permission-guard` extension adds basic guardrails (scoped file access, blocked destructive commands), but it is **not a security boundary** — it's a safety net for honest mistakes, not a jail.
+
+**Run this in a VM, container, or disposable environment** if you're not comfortable with an LLM having shell access to your machine.
 
 ## Architecture
 
