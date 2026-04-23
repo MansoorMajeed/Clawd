@@ -1148,13 +1148,19 @@ function setEditor(pi: ExtensionAPI, ctx: ExtensionContext, history: PromptEntry
 		requestEditorRender = () => editor.requestRenderNow();
 		editor.modeLabelProvider = () => runtime.currentMode;
 		// Keep the mode label color stable (match footer/status bar).
-		editor.modeLabelColor = (text: string) => ctx.ui.theme.fg("dim", text);
+		editor.modeLabelColor = (text: string) => {
+			try { return ctx.ui.theme.fg("dim", text); } catch { return text; }
+		};
 		const borderColor = (text: string) => {
-			const isBashMode = editor.getText().trimStart().startsWith("!");
-			if (isBashMode) {
-				return ctx.ui.theme.getBashModeBorderColor()(text);
+			try {
+				const isBashMode = editor.getText().trimStart().startsWith("!");
+				if (isBashMode) {
+					return ctx.ui.theme.getBashModeBorderColor()(text);
+				}
+				return getModeBorderColor(ctx, pi, runtime.currentMode)(text);
+			} catch {
+				return text;
 			}
-			return getModeBorderColor(ctx, pi, runtime.currentMode)(text);
 		};
 
 		editor.borderColor = borderColor;
