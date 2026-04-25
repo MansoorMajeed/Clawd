@@ -145,15 +145,16 @@ export default function (pi: ExtensionAPI) {
 			const currentSessionFile = ctx.sessionManager.getSessionFile();
 			const newSessionResult = await ctx.newSession({
 				parentSession: currentSessionFile,
+				withSession: async (newCtx) => {
+					newCtx.ui.setEditorText(`Read \`${filepath}\` and continue where we left off.`);
+					newCtx.ui.notify("Ready — submit to continue.", "info");
+				},
 			});
 
 			if (newSessionResult.cancelled) {
 				ctx.ui.notify("New session cancelled — continuation file is still at " + filepath, "info");
 				return;
 			}
-
-			ctx.ui.setEditorText(`Read \`${filepath}\` and continue where we left off.`);
-			ctx.ui.notify("Ready — submit to continue.", "info");
 		},
 	});
 }

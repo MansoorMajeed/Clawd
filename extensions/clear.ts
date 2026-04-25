@@ -22,7 +22,11 @@ export default function (pi: ExtensionAPI): void {
 			const firstEntry = branch[0];
 			if (!firstEntry || !("id" in firstEntry)) {
 				// No entries with IDs — start a new session instead
-				const result = await ctx.newSession({});
+				const result = await ctx.newSession({
+					withSession: async (newCtx) => {
+						newCtx.ui.notify("Started fresh session.", "info");
+					},
+				});
 				if (result.cancelled) {
 					ctx.ui.notify("Cancelled.", "info");
 				}
@@ -35,9 +39,13 @@ export default function (pi: ExtensionAPI): void {
 				ctx.ui.notify("Conversation cleared.", "info");
 			} catch {
 				// Fallback: create a new session if rewindTo isn't available
-				const result = await ctx.newSession({});
-				if (!result.cancelled) {
-					ctx.ui.notify("Started fresh session.", "info");
+				const result = await ctx.newSession({
+					withSession: async (newCtx) => {
+						newCtx.ui.notify("Started fresh session.", "info");
+					},
+				});
+				if (result.cancelled) {
+					ctx.ui.notify("Cancelled.", "info");
 				}
 			}
 		},
