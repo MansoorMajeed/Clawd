@@ -75,12 +75,13 @@ export default function (pi: ExtensionAPI) {
 		projectConfig = await loadConfig(projectConfigPath);
 		const globalConfig = await loadConfig(globalConfigPath);
 
-		// Build allowed directories: cwd + additional dirs from project config
+		// Build allowed directories: cwd + additional dirs from project + global config
 		allowedDirs = [cwd];
-		if (projectConfig.additionalDirectories) {
-			for (const dir of projectConfig.additionalDirectories) {
-				allowedDirs.push(await resolvePath(dir, cwd));
-			}
+		for (const dir of projectConfig.additionalDirectories ?? []) {
+			allowedDirs.push(await resolvePath(dir, cwd));
+		}
+		for (const dir of globalConfig.additionalDirectories ?? []) {
+			allowedDirs.push(await resolvePath(dir, cwd));
 		}
 
 		// Build allowed paths: merge project + global
