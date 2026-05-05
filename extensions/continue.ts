@@ -1,55 +1,38 @@
 /**
  * Continue Extension — Preserve context and start fresh in the same window
  *
- * When context is getting full mid-task, /continue writes a distilled
- * continuation file to .scratch/sessions/ and starts a new session.
- * The new session reads the file on demand — keeping it out of the
- * conversation token budget.
+ * /continue is /compact + forward intent + clean-slate handoff.
  *
- * Usage:
- *   /continue           — agent writes continuation file, starts new session
- *   /continue <slug>    — use a custom slug for the filename
+ * Flow:
+ *   1. User: /continue <focus>
+ *   2. Side LLM call refines the focus using the conversation as context
+ *   3. Editable confirmation TUI (pre-filled with refined text) — accept / edit / cancel
+ *   4. Accepted focus → fed to Pi's generateSummary as customInstructions
+ *   5. Summary written to .scratch/sessions/, new session opens with read-and-continue prompt
+ *
+ * Requires a focus arg. No focus = error (use /compact for plain summarization).
  */
 
-import type { ExtensionAPI, SessionEntry } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { complete, type Message } from "@mariozechner/pi-ai";
-import { BorderedLoader, convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
+import {
+	BorderedLoader,
+	buildSessionContext,
+	convertToLlm,
+	DEFAULT_COMPACTION_SETTINGS,
+	ExtensionInputComponent,
+	generateSummary,
+} from "@mariozechner/pi-coding-agent";
 
-const SYSTEM_PROMPT = `You are a session continuity assistant. Given a conversation history, write a concise continuation file that a fresh coding agent session can read to pick up where this one left off.
+const REFINE_SYSTEM_PROMPT = `You are helping a user prepare a session handoff. Given the conversation history and the user's stated focus for the next session, produce ONE concise sentence describing what the next session should work on.
 
-Write ONLY the markdown content. No preamble.
+Be specific — reference file paths, function names, branch names, or step numbers from the conversation when relevant. The next session is a fresh agent with no memory of this conversation.
 
-Format:
-
-# Continue: <short task description>
-
-## What We're Doing
-<1-3 sentences: the task, goal, and current approach>
-
-## Key Decisions
-<bullet list of decisions made and why — only include ones that matter for continuing>
-
-## Current State
-<what's done, what's in progress, what's broken. Be specific — file names, function names>
-
-## Files Involved
-<bullet list of file paths that are relevant>
-
-## Next Steps
-<exactly what to do next, ordered. Specific enough to act on immediately>
-
-## Gotchas
-<anything discovered that's non-obvious and would waste time if rediscovered>
-
-Rules:
-- Be concise. This is a reference doc, not a narrative.
-- Only include information needed to continue the work.
-- File paths must be exact.
-- Skip any section that has nothing useful to say.`;
+Output ONLY the refined focus sentence. No preamble, no quotes, no formatting.`;
 
 export default function (pi: ExtensionAPI) {
 	pi.registerCommand("continue", {
-		description: "Write continuation file to .scratch/sessions/ and start fresh",
+		description: "Refine focus, write continuation file, start fresh session",
 		handler: async (args, ctx) => {
 			if (!ctx.hasUI) {
 				ctx.ui.notify("/continue requires interactive mode", "error");
@@ -61,58 +44,111 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
+			const focus = args.trim();
+			if (!focus) {
+				ctx.ui.notify(
+					"/continue requires a focus arg — describe what next session should work on. Usage: /continue <focus>. Or use /compact for plain summarization.",
+					"error",
+				);
+				return;
+			}
+
 			const branch = ctx.sessionManager.getBranch();
-			const messages = branch
-				.filter((entry): entry is SessionEntry & { type: "message" } => entry.type === "message")
-				.map((entry) => entry.message);
+			const messages = buildSessionContext(branch).messages;
 
 			if (messages.length === 0) {
 				ctx.ui.notify("No conversation to continue from", "error");
 				return;
 			}
 
-			const llmMessages = convertToLlm(messages);
-			const conversationText = serializeConversation(llmMessages);
-
-			// Generate continuation file content
-			const result = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
-				const loader = new BorderedLoader(tui, theme, "Writing continuation file...");
+			// Step 1: refine the focus using the model + conversation context
+			const refined = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
+				const loader = new BorderedLoader(tui, theme, "Refining focus...");
 				loader.onAbort = () => done(null);
 
-				const doGenerate = async () => {
+				(async () => {
 					const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model!);
-					if (!auth.ok) {
-						throw new Error(auth.error);
-					}
+					if (!auth.ok) throw new Error(auth.error);
 
+					const llmMessages = convertToLlm(messages);
 					const userMessage: Message = {
 						role: "user",
-						content: [
-							{
-								type: "text",
-								text: `## Conversation History\n\n${conversationText}`,
-							},
-						],
+						content: [{ type: "text", text: `User's stated focus for the next session: ${focus}` }],
 						timestamp: Date.now(),
 					};
 
 					const response = await complete(
 						ctx.model!,
-						{ systemPrompt: SYSTEM_PROMPT, messages: [userMessage] },
-						{ apiKey: auth.apiKey, headers: auth.headers, signal: loader.signal },
+						{ systemPrompt: REFINE_SYSTEM_PROMPT, messages: [...llmMessages, userMessage] },
+						{ apiKey: auth.apiKey ?? "", headers: auth.headers, signal: loader.signal },
 					);
 
-					if (response.stopReason === "aborted") {
-						return null;
-					}
+					if (response.stopReason === "aborted") return null;
 
-					return response.content
+					const text = response.content
 						.filter((c): c is { type: "text"; text: string } => c.type === "text")
 						.map((c) => c.text)
-						.join("\n");
-				};
+						.join("\n")
+						.trim();
 
-				doGenerate()
+					return text || null;
+				})()
+					.then(done)
+					.catch((err) => {
+						console.error("Focus refinement failed:", err);
+						done(null);
+					});
+
+				return loader;
+			});
+
+			// Fall back to raw focus if refinement aborted/failed.
+			// Notify only on actual failure — abort is silent.
+			const refinedFocus = refined ?? focus;
+			if (refined === null) {
+				ctx.ui.notify("Focus refinement skipped — using raw input.", "info");
+			}
+
+			// Step 2: editable confirmation. Pre-fill input with the refined text.
+			const acceptedFocus = await ctx.ui.custom<string | null>((_tui, _theme, _kb, done) => {
+				const inputComp = new ExtensionInputComponent(
+					"Refined focus (edit if needed, Enter to accept, Esc to cancel)",
+					undefined,
+					(value: string) => done(value.trim() || null),
+					() => done(null),
+				);
+				// Pre-fill the underlying Input. ExtensionInputComponent doesn't expose a
+				// pre-fill API; the field is TS-private but accessible at runtime.
+				const inputField = (inputComp as unknown as { input?: { setValue?: (v: string) => void } }).input;
+				inputField?.setValue?.(refinedFocus);
+				return inputComp;
+			});
+
+			if (acceptedFocus === null) {
+				ctx.ui.notify("Cancelled", "info");
+				return;
+			}
+
+			// Step 3: heavy compaction via Pi's generateSummary
+			const result = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
+				const loader = new BorderedLoader(tui, theme, "Writing continuation file...");
+				loader.onAbort = () => done(null);
+
+				(async () => {
+					const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model!);
+					if (!auth.ok) throw new Error(auth.error);
+
+					return await generateSummary(
+						messages,
+						ctx.model!,
+						DEFAULT_COMPACTION_SETTINGS.reserveTokens,
+						auth.apiKey ?? "",
+						auth.headers,
+						loader.signal,
+						acceptedFocus,
+						undefined,
+					);
+				})()
 					.then(done)
 					.catch((err) => {
 						console.error("Continue generation failed:", err);
@@ -127,21 +163,24 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			// Build filename
+			// Step 4: write file + start new session
 			const date = new Date().toISOString().slice(0, 10);
-			const slug = args.trim() || `${Date.now()}`;
-			const safeSlug = slug.replace(/[^a-zA-Z0-9-_]/g, "-").replace(/-+/g, "-").toLowerCase();
-			const filename = `continue-${date}-${safeSlug}.md`;
+			const safeFocus = acceptedFocus
+				.toLowerCase()
+				.replace(/[^a-z0-9-_ ]/g, "")
+				.trim()
+				.replace(/\s+/g, "-")
+				.slice(0, 40)
+				.replace(/-+$/, "");
+			const filename = `continue-${date}-${safeFocus || Date.now()}.md`;
 			const filepath = `.scratch/sessions/${filename}`;
 
-			// Write the file
-			const { writeFileSync, mkdirSync } = await import("fs");
+			const { writeFileSync, mkdirSync } = await import("node:fs");
 			mkdirSync(".scratch/sessions", { recursive: true });
 			writeFileSync(filepath, result, "utf-8");
 
 			ctx.ui.notify(`Wrote ${filepath}`, "info");
 
-			// Start new session
 			const currentSessionFile = ctx.sessionManager.getSessionFile();
 			const newSessionResult = await ctx.newSession({
 				parentSession: currentSessionFile,
@@ -152,8 +191,7 @@ export default function (pi: ExtensionAPI) {
 			});
 
 			if (newSessionResult.cancelled) {
-				ctx.ui.notify("New session cancelled — continuation file is still at " + filepath, "info");
-				return;
+				ctx.ui.notify(`New session cancelled — continuation file is still at ${filepath}`, "info");
 			}
 		},
 	});
