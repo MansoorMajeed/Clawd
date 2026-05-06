@@ -57,6 +57,32 @@ function renderBullets(text: string): string[] {
 	return out;
 }
 
+/**
+ * Pure: filter to .md files and return the lexicographically-newest N filenames.
+ * Session filenames follow the pattern `YYYY-MM-DD-HHMM.md` so lex-desc == time-desc.
+ * `n` is clamped to a minimum of 1.
+ */
+export function pickRecentSessions(filenames: string[], n: number): string[] {
+	const md = filenames.filter((f) => f.endsWith(".md"));
+	md.sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
+	const k = Math.max(1, n);
+	return md.slice(0, k);
+}
+
+/**
+ * Pure: render a list of session files as a single string with blank-line
+ * separators between sessions. Empty list returns a stable placeholder so
+ * callers can show something rather than nothing.
+ */
+export function formatSessions(
+	sessions: ReadonlyArray<{ name: string; content: string }>,
+): string {
+	if (sessions.length === 0) return "(no journal entries yet)";
+	return sessions
+		.map((s) => (s.content.endsWith("\n") ? s.content : s.content + "\n"))
+		.join("\n");
+}
+
 function lastSubheading(text: string): string | null {
 	const re = /^##\s+(\S.*?)\s*$/gm;
 	let last: string | null = null;

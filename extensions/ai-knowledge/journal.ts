@@ -1,5 +1,11 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { foldAppend, type NowStamp } from "./journal-content.js";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import {
+	foldAppend,
+	formatSessions,
+	pickRecentSessions,
+	type NowStamp,
+} from "./journal-content.js";
 import { sessionPath, sessionsDir } from "./paths.js";
 import type { CurrentTask } from "./types.js";
 
@@ -36,4 +42,31 @@ export async function appendEntry(
 	const updated = foldAppend(existing, text, now, current.task);
 	await writeFile(file, updated, "utf8");
 	return file;
+}
+
+/**
+ * Read up to `n` most-recent session files for a task, formatted into a single
+ * string. Returns the formatted content. Missing sessions dir or empty dir
+ * returns the "(no journal entries yet)" placeholder via formatSessions.
+ */
+export async function readRecentSessions(
+	root: string,
+	current: CurrentTask,
+	n: number,
+): Promise<string> {
+	const dir = sessionsDir(root, current.project, current.task);
+	let entries: string[] = [];
+	try {
+		entries = await readdir(dir);
+	} catch {
+		return formatSessions([]);
+	}
+	const picked = pickRecentSessions(entries, n);
+	const sessions = await Promise.all(
+		picked.map(async (name) => ({
+			name,
+			content: await readFile(join(dir, name), "utf8").catch(() => ""),
+		})),
+	);
+	return formatSessions(sessions.filter((s) => s.content.length > 0));
 }

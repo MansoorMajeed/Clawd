@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { foldAppend } from "../../extensions/ai-knowledge/journal-content.js";
+import {
+	foldAppend,
+	pickRecentSessions,
+	formatSessions,
+} from "../../extensions/ai-knowledge/journal-content.js";
 
 const NOW = { date: "2026-05-05", hhmm: "19:30" };
 
@@ -65,5 +69,68 @@ describe("foldAppend", () => {
 		const existing = "# 2026-05-05 19:30 — t\n\n## 19:30\n- a";
 		const out = foldAppend(existing, "b", NOW, "t");
 		expect(out).toBe("# 2026-05-05 19:30 — t\n\n## 19:30\n- a\n- b\n");
+	});
+});
+
+describe("pickRecentSessions", () => {
+	it("returns empty for empty input", () => {
+		expect(pickRecentSessions([], 3)).toEqual([]);
+	});
+
+	it("filters out non-md files", () => {
+		const files = ["2026-05-05-1900.md", "README", "notes.txt", ".DS_Store"];
+		expect(pickRecentSessions(files, 5)).toEqual(["2026-05-05-1900.md"]);
+	});
+
+	it("returns all when fewer than n", () => {
+		const files = ["2026-05-05-1900.md", "2026-05-04-1000.md"];
+		expect(pickRecentSessions(files, 5)).toEqual([
+			"2026-05-05-1900.md",
+			"2026-05-04-1000.md",
+		]);
+	});
+
+	it("sorts lex-desc and takes top N", () => {
+		const files = [
+			"2026-05-04-1000.md",
+			"2026-05-05-0900.md",
+			"2026-05-05-1900.md",
+			"2026-05-03-2300.md",
+		];
+		expect(pickRecentSessions(files, 2)).toEqual([
+			"2026-05-05-1900.md",
+			"2026-05-05-0900.md",
+		]);
+	});
+
+	it("clamps n to a sensible minimum of 1", () => {
+		const files = ["2026-05-05-1900.md", "2026-05-04-1000.md"];
+		expect(pickRecentSessions(files, 0)).toEqual(["2026-05-05-1900.md"]);
+		expect(pickRecentSessions(files, -3)).toEqual(["2026-05-05-1900.md"]);
+	});
+});
+
+describe("formatSessions", () => {
+	it("returns a clear marker when no sessions", () => {
+		expect(formatSessions([])).toBe("(no journal entries yet)");
+	});
+
+	it("returns content unchanged for a single session", () => {
+		const sessions = [
+			{ name: "2026-05-05-1900.md", content: "# 2026-05-05 19:00 — t\n- a\n" },
+		];
+		expect(formatSessions(sessions)).toBe("# 2026-05-05 19:00 — t\n- a\n");
+	});
+
+	it("joins multiple sessions with a blank-line separator", () => {
+		const sessions = [
+			{ name: "2026-05-05-1900.md", content: "# 2026-05-05 19:00 — t\n- a\n" },
+			{ name: "2026-05-04-1000.md", content: "# 2026-05-04 10:00 — t\n- b\n" },
+		];
+		const out = formatSessions(sessions);
+		// Each session header ('# YYYY-...') should be present; sessions separated by blank line.
+		expect(out).toContain("# 2026-05-05 19:00 — t");
+		expect(out).toContain("# 2026-05-04 10:00 — t");
+		expect(out).toMatch(/- a\n\n# 2026-05-04/);
 	});
 });
