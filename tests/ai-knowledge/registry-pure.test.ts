@@ -3,6 +3,7 @@ import {
 	parseRegistry,
 	serializeRegistry,
 	validateSlug,
+	validateName,
 	addProject,
 	addTask,
 	findTask,
@@ -29,6 +30,95 @@ describe("validateSlug", () => {
 		"foo.bar",
 		"foo/bar",
 	])("rejects %s", (s) => expect(() => validateSlug(s)).toThrow());
+});
+
+describe("validateName", () => {
+	it.each(["a", "Hello", "Project With Spaces", "x".repeat(200)])(
+		"accepts %s",
+		(s) => expect(() => validateName(s)).not.toThrow(),
+	);
+
+	it.each([
+		["", /empty/i],
+		["   ", /empty/i],
+		["a\nb", /newline/i],
+		["a\rb", /newline/i],
+		["x".repeat(201), /too long/i],
+	])("rejects %j with %s", (s, msg) =>
+		expect(() => validateName(s as string)).toThrow(msg),
+	);
+});
+
+describe("addProject name handling", () => {
+	it("trims whitespace around the name", () => {
+		const reg = addProject({ projects: [] }, "alpha", "  Alpha  ");
+		expect(reg.projects[0]?.name).toBe("Alpha");
+	});
+
+	it("rejects empty / whitespace-only name", () => {
+		expect(() => addProject({ projects: [] }, "alpha", "")).toThrow(/empty/i);
+		expect(() => addProject({ projects: [] }, "alpha", "   ")).toThrow(/empty/i);
+	});
+
+	it("rejects names with newlines", () => {
+		expect(() => addProject({ projects: [] }, "alpha", "a\nb")).toThrow(/newline/i);
+	});
+});
+
+describe("addTask name handling", () => {
+	const seeded = (): Registry =>
+		addProject({ projects: [] }, "alpha", "Alpha");
+
+	it("trims whitespace around the name", () => {
+		const reg = addTask(seeded(), "alpha", "t1", "  Task One  ", {
+			created: "2026-05-05",
+		});
+		expect(reg.projects[0]?.tasks[0]?.name).toBe("Task One");
+	});
+
+	it("rejects empty name", () => {
+		expect(() =>
+			addTask(seeded(), "alpha", "t1", "", { created: "2026-05-05" }),
+		).toThrow(/empty/i);
+	});
+});
+
+describe("parseRegistry name safety", () => {
+	it("drops projects with empty / whitespace-only name", () => {
+		const yaml = `projects:
+  - slug: a
+    name: ""
+    tasks: []
+  - slug: b
+    name: "   "
+    tasks: []
+  - slug: c
+    name: Good
+    tasks: []
+`;
+		const reg = parseRegistry(yaml);
+		expect(reg.projects.map((p) => p.slug)).toEqual(["c"]);
+	});
+
+	it("drops tasks with empty name but keeps siblings", () => {
+		const yaml = `projects:
+  - slug: a
+    name: A
+    tasks:
+      - slug: bad
+        name: ""
+        status: active
+        created: "2026-05-05"
+        updated: "2026-05-05"
+      - slug: ok
+        name: OK
+        status: active
+        created: "2026-05-05"
+        updated: "2026-05-05"
+`;
+		const reg = parseRegistry(yaml);
+		expect(reg.projects[0]?.tasks.map((t) => t.slug)).toEqual(["ok"]);
+	});
 });
 
 describe("parseRegistry", () => {

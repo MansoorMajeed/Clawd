@@ -1,4 +1,4 @@
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { loadRegistry, saveRegistry } from "./registry.js";
 import { addProject, addTask, listActiveTasks, validateSlug } from "./registry-pure.js";
 import { gitCommit } from "./git.js";
@@ -6,7 +6,6 @@ import { setCurrentTask } from "./state.js";
 import { timestampForFilename } from "./journal.js";
 import { registryPath } from "./paths.js";
 import type { Config, CurrentTask } from "./types.js";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
 const SKIP = "Skip (no task)";
 const NEW_TASK = "+ New task...";
@@ -69,16 +68,14 @@ async function runNewTaskFlow(deps: PickerDeps): Promise<CurrentTask | null> {
 
 	let projectSlug: string;
 	if (projectChoice === NEW_PROJECT) {
-		const slug = await ctx.ui.input("New project slug (lowercase-hyphens):");
-		if (!slug) return null;
-		try {
-			validateSlug(slug);
-		} catch (e) {
-			ctx.ui.notify((e as Error).message, "error");
-			return null;
-		}
-		const name = await ctx.ui.input("Project display name:");
-		if (!name) return null;
+		const slug = await promptSlug(ctx, "New project slug (lowercase-hyphens):");
+		if (slug === undefined) return null;
+		const name = await promptOptionalName(
+			ctx,
+			"Project display name (Enter to use slug):",
+			slug,
+		);
+		if (name === undefined) return null;
 		try {
 			reg = addProject(reg, slug, name);
 		} catch (e) {
@@ -95,16 +92,14 @@ async function runNewTaskFlow(deps: PickerDeps): Promise<CurrentTask | null> {
 	}
 
 	// Task slug + name.
-	const taskSlug = await ctx.ui.input("New task slug (lowercase-hyphens):");
-	if (!taskSlug) return null;
-	try {
-		validateSlug(taskSlug);
-	} catch (e) {
-		ctx.ui.notify((e as Error).message, "error");
-		return null;
-	}
-	const taskName = await ctx.ui.input("Task display name:");
-	if (!taskName) return null;
+	const taskSlug = await promptSlug(ctx, "New task slug (lowercase-hyphens):");
+	if (taskSlug === undefined) return null;
+	const taskName = await promptOptionalName(
+		ctx,
+		"Task display name (Enter to use slug):",
+		taskSlug,
+	);
+	if (taskName === undefined) return null;
 	const ticket = await ctx.ui.input("Ticket URL (optional, leave blank to skip):");
 
 	const today = isoDate();
@@ -137,6 +132,50 @@ async function runNewTaskFlow(deps: PickerDeps): Promise<CurrentTask | null> {
 	ctx.ui.setStatus("ai-knowledge", `${current.project}/${current.task}`);
 	ctx.ui.notify(`Registered ${projectSlug}/${taskSlug}`, "info");
 	return current;
+}
+
+/**
+ * Prompt for a slug. Trims input. Re-prompts on empty or invalid format with
+ * an inline error notification. Returns the trimmed slug, or undefined if the
+ * user cancels (Esc).
+ */
+async function promptSlug(
+	ctx: ExtensionContext,
+	title: string,
+): Promise<string | undefined> {
+	while (true) {
+		const raw = await ctx.ui.input(title);
+		if (raw === undefined) return undefined;
+		const trimmed = raw.trim();
+		if (trimmed.length === 0) {
+			ctx.ui.notify("Slug is required (or press Esc to cancel)", "error");
+			continue;
+		}
+		try {
+			validateSlug(trimmed);
+		} catch (e) {
+			ctx.ui.notify((e as Error).message, "error");
+			continue;
+		}
+		return trimmed;
+	}
+}
+
+/**
+ * Prompt for a display name. Empty submit defaults to a slug-derived name
+ * (`first-task` -> `first task`). Returns undefined only if the user cancels
+ * with Esc.
+ */
+async function promptOptionalName(
+	ctx: ExtensionContext,
+	title: string,
+	slug: string,
+): Promise<string | undefined> {
+	const raw = await ctx.ui.input(title);
+	if (raw === undefined) return undefined;
+	const trimmed = raw.trim();
+	if (trimmed.length === 0) return slug.replace(/-/g, " ");
+	return trimmed;
 }
 
 function isoDate(d: Date = new Date()): string {

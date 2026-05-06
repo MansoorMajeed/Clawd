@@ -23,6 +23,35 @@ export function validateSlug(s: string): void {
 	}
 }
 
+const NAME_MAX = 200;
+
+export function isValidName(s: unknown): s is string {
+	if (typeof s !== "string") return false;
+	const trimmed = s.trim();
+	if (trimmed.length === 0) return false;
+	if (trimmed.length > NAME_MAX) return false;
+	if (/[\n\r]/.test(trimmed)) return false;
+	return true;
+}
+
+/**
+ * Validate a display name. Caller is responsible for trimming if they want
+ * lenient behavior on leading/trailing whitespace; this function permits
+ * whitespace so long as the trimmed result is non-empty and bounded.
+ */
+export function validateName(s: string): void {
+	if (typeof s !== "string" || s.trim().length === 0) {
+		throw new Error("Name is empty");
+	}
+	const trimmed = s.trim();
+	if (/[\n\r]/.test(trimmed)) {
+		throw new Error("Name contains newline characters");
+	}
+	if (trimmed.length > NAME_MAX) {
+		throw new Error(`Name too long (max ${NAME_MAX} characters)`);
+	}
+}
+
 export function parseRegistry(text: string): Registry {
 	if (!text || !text.trim()) return { projects: [] };
 	let parsed: unknown;
@@ -42,15 +71,15 @@ export function parseRegistry(text: string): Registry {
 function coerceProject(raw: unknown): ProjectEntry | null {
 	if (!raw || typeof raw !== "object") return null;
 	const o = raw as Record<string, unknown>;
-	if (typeof o.name !== "string") return null;
 	// Drop entries whose slug fails validation. Slugs flow into path.join
 	// for session/wiki paths; an invalid slug like "../foo" would let writes
 	// escape the vault. Enforce on load symmetrically with addProject/addTask.
 	if (!isValidSlug(o.slug)) return null;
+	if (!isValidName(o.name)) return null;
 	const tasks = Array.isArray(o.tasks) ? o.tasks : [];
 	return {
 		slug: o.slug,
-		name: o.name,
+		name: (o.name as string).trim(),
 		updated: typeof o.updated === "string" ? o.updated : undefined,
 		tasks: tasks.map(coerceTask).filter((t): t is TaskEntry => t !== null),
 	};
@@ -59,13 +88,13 @@ function coerceProject(raw: unknown): ProjectEntry | null {
 function coerceTask(raw: unknown): TaskEntry | null {
 	if (!raw || typeof raw !== "object") return null;
 	const o = raw as Record<string, unknown>;
-	if (typeof o.name !== "string") return null;
 	if (!isValidSlug(o.slug)) return null;
+	if (!isValidName(o.name)) return null;
 	const status =
 		o.status === "paused" || o.status === "done" ? o.status : "active";
 	return {
 		slug: o.slug,
-		name: o.name,
+		name: (o.name as string).trim(),
 		status,
 		ticket: typeof o.ticket === "string" ? o.ticket : undefined,
 		created: typeof o.created === "string" ? o.created : "",
@@ -99,11 +128,13 @@ export function serializeRegistry(reg: Registry): string {
 
 export function addProject(reg: Registry, slug: string, name: string): Registry {
 	validateSlug(slug);
+	validateName(name);
+	const trimmedName = name.trim();
 	if (reg.projects.some((p) => p.slug === slug)) {
 		throw new Error(`Duplicate project slug "${slug}"`);
 	}
 	return {
-		projects: [...reg.projects, { slug, name, tasks: [] }],
+		projects: [...reg.projects, { slug, name: trimmedName, tasks: [] }],
 	};
 }
 
@@ -121,6 +152,8 @@ export function addTask(
 	opts: AddTaskOpts,
 ): Registry {
 	validateSlug(slug);
+	validateName(name);
+	const trimmedName = name.trim();
 	const projects = reg.projects.map((p) => {
 		if (p.slug !== project) return p;
 		if (p.tasks.some((t) => t.slug === slug)) {
@@ -128,7 +161,7 @@ export function addTask(
 		}
 		const task: TaskEntry = {
 			slug,
-			name,
+			name: trimmedName,
 			status: opts.status ?? "active",
 			ticket: opts.ticket,
 			created: opts.created,
