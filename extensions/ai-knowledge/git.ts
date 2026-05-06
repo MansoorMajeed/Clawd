@@ -63,9 +63,21 @@ export async function gitCommit(opts: GitCommitOptions): Promise<void> {
 			return;
 		}
 
+		// Pathspec is critical: without it, `git commit` commits the entire
+		// index, so any pre-existing staged changes the user had in the vault
+		// would piggyback onto the agent's commit. With `-- paths`, only the
+		// specified files are committed.
 		const commit = await opts.pi.exec(
 			"git",
-			["-c", "commit.gpgsign=false", "commit", "-m", opts.message],
+			[
+				"-c",
+				"commit.gpgsign=false",
+				"commit",
+				"-m",
+				opts.message,
+				"--",
+				...opts.paths,
+			],
 			{ cwd: opts.root, timeout: 5000 },
 		);
 		if (commit.code !== 0) {
