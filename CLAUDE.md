@@ -29,6 +29,7 @@ Custom Pi coding agent package — lean system prompt, opinionated workflow. Inc
   - `compact-advisor.ts` — Suggests compaction at 150k tokens with task-aware instructions. 5-minute cooldown.
   - `continue.ts` — `/continue` command: writes distilled session state to `.scratch/sessions/`, starts fresh session in same window
   - `ai-knowledge/` — Per-task agent memory in a configured markdown vault. Picker on session start, `journal_append`/`current_task` tools, `/task` command, git auto-commit. Default-off; activates when `~/.pi/agent/ai-knowledge.json` has a valid `rootPath`.
+  - `journal-advisor.ts` — Reminds the agent to `journal_append` when an AI-Knowledge task is active and context has grown 50k tokens since the last reminder/journal entry. Permissive wording to avoid pro-forma entries.
 - `skills/` — Pi skills (Markdown, one SKILL.md per directory)
   - **Workflow** (12): research (distill into `.scratch/research/`), plan (write to `.scratch/plans/`, n2c annotation loop), plan-init, new-feature, debug, review, ship, retro, save-session, update-docs, audit-context, address-review
   - **Safety**: irreversible-action-checklist (5-gate verification for destructive actions)
