@@ -110,6 +110,193 @@ export function stripQuotedContent(segment: string): string {
 	return result.join("");
 }
 
+function tokenizeShellSegment(segment: string): string[] {
+	const tokens: string[] = [];
+	let current: string[] = [];
+	let i = 0;
+
+	function pushToken() {
+		if (current.length > 0) {
+			tokens.push(current.join(""));
+			current = [];
+		}
+	}
+
+	while (i < segment.length) {
+		const ch = segment[i];
+
+		if (/\s/.test(ch)) {
+			pushToken();
+			i++;
+			continue;
+		}
+
+		if (ch === "\\" && i + 1 < segment.length) {
+			current.push(segment[i + 1]);
+			i += 2;
+			continue;
+		}
+
+		if (ch === "$" && i + 1 < segment.length && segment[i + 1] === "'") {
+			i += 2;
+			while (i < segment.length && segment[i] !== "'") {
+				if (segment[i] === "\\" && i + 1 < segment.length) {
+					current.push(segment[i + 1]);
+					i += 2;
+				} else {
+					current.push(segment[i]);
+					i++;
+				}
+			}
+			i++;
+			continue;
+		}
+
+		if (ch === "'") {
+			i++;
+			while (i < segment.length && segment[i] !== "'") {
+				current.push(segment[i]);
+				i++;
+			}
+			i++;
+			continue;
+		}
+
+		if (ch === '"') {
+			i++;
+			while (i < segment.length && segment[i] !== '"') {
+				if (segment[i] === "\\" && i + 1 < segment.length) {
+					current.push(segment[i + 1]);
+					i += 2;
+				} else {
+					current.push(segment[i]);
+					i++;
+				}
+			}
+			i++;
+			continue;
+		}
+
+		current.push(ch);
+		i++;
+	}
+
+	pushToken();
+	return tokens;
+}
+
+const GIT_GLOBAL_OPTIONS_WITH_VALUE = new Set([
+	"-C",
+	"-c",
+	"--git-dir",
+	"--work-tree",
+	"--namespace",
+	"--exec-path",
+	"--super-prefix",
+	"--config-env",
+]);
+
+const GIT_GLOBAL_OPTIONS_WITH_INLINE_VALUE = [
+	"-C",
+	"-c",
+	"--git-dir=",
+	"--work-tree=",
+	"--namespace=",
+	"--exec-path=",
+	"--super-prefix=",
+	"--config-env=",
+];
+
+function findGitSubcommandIndex(tokens: string[]): number {
+	if (tokens[0] !== "git") return -1;
+
+	let i = 1;
+	while (i < tokens.length) {
+		const token = tokens[i];
+
+		if (GIT_GLOBAL_OPTIONS_WITH_VALUE.has(token)) {
+			i += 2;
+			continue;
+		}
+
+		if (
+			GIT_GLOBAL_OPTIONS_WITH_INLINE_VALUE.some(
+				(option) => token.startsWith(option) && token.length > option.length,
+			)
+		) {
+			i++;
+			continue;
+		}
+
+		if (token.startsWith("--") || (token.startsWith("-") && token !== "-")) {
+			i++;
+			continue;
+		}
+
+		return i;
+	}
+
+	return -1;
+}
+
+function isBroadGitAddOption(token: string): boolean {
+	if (token === "--all" || token === "--update") return true;
+	if (!token.startsWith("-") || token === "-") return false;
+	if (token.startsWith("--")) return false;
+
+	return token.slice(1).includes("A") || token.slice(1).includes("u");
+}
+
+function isInteractiveGitAddOption(token: string): boolean {
+	if (token === "--patch" || token === "--interactive") return true;
+	if (!token.startsWith("-") || token === "-" || token.startsWith("--")) return false;
+
+	return token.slice(1).includes("p") || token.slice(1).includes("i");
+}
+
+function isBroadGitAddPathspec(token: string): boolean {
+	return token === "." || token === "./" || token === ":/";
+}
+
+export function checkBroadGitAdd(command: string): { description: string } | null {
+	const segments = splitCommands(command);
+
+	for (const segment of segments) {
+		const tokens = tokenizeShellSegment(segment);
+		const gitSubcommandIndex = findGitSubcommandIndex(tokens);
+
+		if (gitSubcommandIndex === -1 || tokens[gitSubcommandIndex] !== "add") {
+			continue;
+		}
+
+		const args = tokens.slice(gitSubcommandIndex + 1);
+		const interactive = args.some(isInteractiveGitAddOption);
+		if (interactive) {
+			continue;
+		}
+
+		let pathspecMode = false;
+		for (const arg of args) {
+			if (arg === "--") {
+				pathspecMode = true;
+				continue;
+			}
+
+			if (!pathspecMode && isBroadGitAddOption(arg)) {
+				return { description: "Broad git staging" };
+			}
+
+			if (pathspecMode || !arg.startsWith("-") || arg === "-") {
+				if (isBroadGitAddPathspec(arg)) {
+					return { description: "Broad git staging" };
+				}
+			}
+		}
+	}
+
+	return null;
+}
+
 // ─── Hard Blocks ───
 
 const HARD_BLOCK_PATTERNS: Array<{ pattern: RegExp; description: string }> = [

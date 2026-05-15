@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
 	checkHardBlock,
+	checkBroadGitAdd,
 	checkDangerousPattern,
 	isPathAllowed,
 	extractPaths,
@@ -107,6 +108,53 @@ describe("checkHardBlock", () => {
 
 	it("does NOT block rm -rf /tmp/foo (not root)", () => {
 		expect(checkHardBlock("rm -rf /tmp/foo")).toBeNull();
+	});
+});
+
+// ─── Broad Git Staging ───
+
+describe("checkBroadGitAdd", () => {
+	it("blocks broad staging options", () => {
+		expect(checkBroadGitAdd("git add -A")).not.toBeNull();
+		expect(checkBroadGitAdd("git add --all")).not.toBeNull();
+		expect(checkBroadGitAdd("git add -u")).not.toBeNull();
+		expect(checkBroadGitAdd("git add --update")).not.toBeNull();
+		expect(checkBroadGitAdd("git add -Av")).not.toBeNull();
+		expect(checkBroadGitAdd("git add -uv")).not.toBeNull();
+	});
+
+	it("blocks broad pathspecs", () => {
+		expect(checkBroadGitAdd("git add .")).not.toBeNull();
+		expect(checkBroadGitAdd("git add ./")).not.toBeNull();
+		expect(checkBroadGitAdd("git add -- .")).not.toBeNull();
+		expect(checkBroadGitAdd("git add :/")).not.toBeNull();
+	});
+
+	it("blocks broad staging inside compound commands", () => {
+		expect(checkBroadGitAdd("git status --short && git add -A && git commit -m 'x'")).not.toBeNull();
+	});
+
+	it("recognizes git global options before add", () => {
+		expect(checkBroadGitAdd("git -C ../repo add -A")).not.toBeNull();
+		expect(checkBroadGitAdd("git -c core.quotePath=false add --all")).not.toBeNull();
+	});
+
+	it("allows explicit file staging", () => {
+		expect(checkBroadGitAdd("git add src/foo.ts")).toBeNull();
+		expect(checkBroadGitAdd("git add -- src/foo.ts tests/bar.ts")).toBeNull();
+		expect(checkBroadGitAdd("git add src/")).toBeNull();
+		expect(checkBroadGitAdd("git add -N src/foo.ts")).toBeNull();
+	});
+
+	it("allows patch-based staging", () => {
+		expect(checkBroadGitAdd("git add -p")).toBeNull();
+		expect(checkBroadGitAdd("git add -p .")).toBeNull();
+		expect(checkBroadGitAdd("git add --patch .")).toBeNull();
+	});
+
+	it("ignores quoted command text", () => {
+		expect(checkBroadGitAdd("echo 'git add -A'")).toBeNull();
+		expect(checkBroadGitAdd('echo "git add ."')).toBeNull();
 	});
 });
 

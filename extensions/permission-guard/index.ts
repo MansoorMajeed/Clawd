@@ -12,6 +12,7 @@ import { resolve, dirname } from "node:path";
 import { realpath } from "node:fs/promises";
 import {
 	checkHardBlock,
+	checkBroadGitAdd,
 	checkDangerousPattern,
 	isPathAllowed,
 	extractPaths,
@@ -148,6 +149,17 @@ export default function (pi: ExtensionAPI) {
 				return {
 					block: true,
 					reason: `HARD BLOCKED: ${hardBlock.description}. This action is never allowed.`,
+				};
+			}
+
+			const broadGitAdd = checkBroadGitAdd(command);
+			if (broadGitAdd) {
+				return {
+					block: true,
+					reason:
+						`Blocked: ${broadGitAdd.description}. Do not use broad staging commands like ` +
+						"`git add -A`, `git add --all`, `git add .`, or `git add -u`. " +
+						"Run `git status --short`, inspect the changed files, then stage only intended files with `git add <file>...`.",
 				};
 			}
 
