@@ -539,27 +539,39 @@ function normalizePath(p: string): string {
 
 export function isPathAllowed(
 	filePath: string,
-	allowedDirs: string[],
-	allowedPaths: string[],
+	allowed: string[],
 ): boolean {
 	const normalized = normalizePath(filePath);
 
-	// Check explicit allowed paths
-	for (const allowed of allowedPaths) {
-		if (normalized === normalizePath(allowed)) {
-			return true;
-		}
-	}
-
-	// Check allowed directories (must be subpath, not just prefix)
-	for (const dir of allowedDirs) {
-		const normalizedDir = normalizePath(dir);
-		if (normalized === normalizedDir || normalized.startsWith(normalizedDir + "/")) {
+	for (const entry of allowed) {
+		const normalizedEntry = normalizePath(entry);
+		if (normalized === normalizedEntry || normalized.startsWith(normalizedEntry + "/")) {
 			return true;
 		}
 	}
 
 	return false;
+}
+
+export type AccessMode = "read" | "write";
+
+export function checkAccess(
+	filePath: string,
+	mode: AccessMode,
+	readPaths: string[],
+	readWritePaths: string[],
+): boolean {
+	if (mode === "read") {
+		return isPathAllowed(filePath, [...readPaths, ...readWritePaths]);
+	}
+
+	return isPathAllowed(filePath, readWritePaths);
+}
+
+export function toolMode(toolName: string): AccessMode | null {
+	if (toolName === "read") return "read";
+	if (toolName === "write" || toolName === "edit") return "write";
+	return null;
 }
 
 // ─── Path Extraction ───

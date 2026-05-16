@@ -4,10 +4,17 @@ import {
 	checkBroadGitAdd,
 	checkDangerousPattern,
 	isPathAllowed,
+	checkAccess,
+	toolMode,
 	extractPaths,
 	splitCommands,
 	stripQuotedContent,
 } from "../extensions/permission-guard/permissions.js";
+import {
+	normalizePermissionConfig,
+	pathForPersistence,
+	readOnlyCoverage,
+} from "../extensions/permission-guard/index.js";
 
 // ─── Shell Parsing (carried over from dangerous-command-guard) ───
 
@@ -319,44 +326,169 @@ describe("checkDangerousPattern", () => {
 // ─── Path Checking ───
 
 describe("isPathAllowed", () => {
-	const allowedDirs = ["/Users/testuser/git/myproject", "/Users/testuser/git/other-repo"];
-	const allowedPaths = ["/Users/testuser/.gitconfig", "/Users/testuser/.ssh/config"];
+	const allowed = [
+		"/Users/testuser/git/myproject",
+		"/Users/testuser/git/other-repo",
+		"/Users/testuser/.gitconfig",
+		"/Users/testuser/.ssh/config",
+	];
 
-	it("allows path within project directory", () => {
-		expect(isPathAllowed("/Users/testuser/git/myproject/src/foo.ts", allowedDirs, allowedPaths)).toBe(true);
+	it("allows path within an allowed entry", () => {
+		expect(isPathAllowed("/Users/testuser/git/myproject/src/foo.ts", allowed)).toBe(true);
 	});
 
-	it("allows path at project root", () => {
-		expect(isPathAllowed("/Users/testuser/git/myproject", allowedDirs, allowedPaths)).toBe(true);
+	it("allows path at the allowed entry", () => {
+		expect(isPathAllowed("/Users/testuser/git/myproject", allowed)).toBe(true);
 	});
 
 	it("allows path in additional directory", () => {
-		expect(isPathAllowed("/Users/testuser/git/other-repo/README.md", allowedDirs, allowedPaths)).toBe(true);
+		expect(isPathAllowed("/Users/testuser/git/other-repo/README.md", allowed)).toBe(true);
 	});
 
 	it("allows explicitly allowed path", () => {
-		expect(isPathAllowed("/Users/testuser/.gitconfig", allowedDirs, allowedPaths)).toBe(true);
+		expect(isPathAllowed("/Users/testuser/.gitconfig", allowed)).toBe(true);
 	});
 
-	it("denies path outside allowed dirs", () => {
-		expect(isPathAllowed("/Users/testuser/secrets/api-key.txt", allowedDirs, allowedPaths)).toBe(false);
+	it("denies path outside allowed entries", () => {
+		expect(isPathAllowed("/Users/testuser/secrets/api-key.txt", allowed)).toBe(false);
 	});
 
-	it("denies path that is prefix but not subdir (no traversal)", () => {
+	it("denies path that is prefix but not subpath", () => {
 		// /Users/testuser/git/myproject-evil should NOT match /Users/testuser/git/myproject
-		expect(isPathAllowed("/Users/testuser/git/myproject-evil/foo.ts", allowedDirs, allowedPaths)).toBe(false);
+		expect(isPathAllowed("/Users/testuser/git/myproject-evil/foo.ts", allowed)).toBe(false);
 	});
 
 	it("denies home directory itself", () => {
-		expect(isPathAllowed("/Users/testuser", allowedDirs, allowedPaths)).toBe(false);
+		expect(isPathAllowed("/Users/testuser", allowed)).toBe(false);
 	});
 
 	it("denies root paths", () => {
-		expect(isPathAllowed("/etc/passwd", allowedDirs, allowedPaths)).toBe(false);
+		expect(isPathAllowed("/etc/passwd", allowed)).toBe(false);
 	});
 
 	it("handles trailing slashes", () => {
-		expect(isPathAllowed("/Users/testuser/git/myproject/", allowedDirs, allowedPaths)).toBe(true);
+		expect(isPathAllowed("/Users/testuser/git/myproject/", allowed)).toBe(true);
+	});
+});
+
+describe("checkAccess", () => {
+	it("allows read but denies write for read-only paths", () => {
+		expect(checkAccess("/Users/testuser/notes/api.md", "read", ["/Users/testuser/notes"], [])).toBe(true);
+		expect(checkAccess("/Users/testuser/notes/api.md", "write", ["/Users/testuser/notes"], [])).toBe(false);
+	});
+
+	it("allows read and write for read-write paths", () => {
+		expect(checkAccess("/Users/testuser/project/src/foo.ts", "read", [], ["/Users/testuser/project"])).toBe(true);
+		expect(checkAccess("/Users/testuser/project/src/foo.ts", "write", [], ["/Users/testuser/project"])).toBe(true);
+	});
+
+	it("denies read and write for paths in neither list", () => {
+		expect(checkAccess("/Users/testuser/secrets/api-key.txt", "read", ["/Users/testuser/notes"], ["/Users/testuser/project"])).toBe(false);
+		expect(checkAccess("/Users/testuser/secrets/api-key.txt", "write", ["/Users/testuser/notes"], ["/Users/testuser/project"])).toBe(false);
+	});
+
+	it("uses path-boundary matching for read and write paths", () => {
+		expect(checkAccess("/tmp/foo", "read", ["/tmp/foo"], [])).toBe(true);
+		expect(checkAccess("/tmp/foo/bar.txt", "read", ["/tmp/foo"], [])).toBe(true);
+		expect(checkAccess("/tmp/foobar", "read", ["/tmp/foo"], [])).toBe(false);
+	});
+});
+
+describe("toolMode", () => {
+	it("maps file tools to access modes", () => {
+		expect(toolMode("read")).toBe("read");
+		expect(toolMode("write")).toBe("write");
+		expect(toolMode("edit")).toBe("write");
+	});
+
+	it("returns null for non-file tools", () => {
+		expect(toolMode("bash")).toBeNull();
+		expect(toolMode("some_mcp_tool")).toBeNull();
+	});
+});
+
+describe("normalizePermissionConfig", () => {
+	it("merges legacy permissions into read-write paths", () => {
+		expect(
+			normalizePermissionConfig({
+				additionalDirectories: ["~/src"],
+				allowedPaths: ["~/.gitconfig"],
+			}),
+		).toEqual({ readPaths: [], readWritePaths: ["~/src", "~/.gitconfig"] });
+	});
+
+	it("preserves new permissions while merging legacy permissions", () => {
+		expect(
+			normalizePermissionConfig({
+				readPaths: ["~/notes"],
+				readWritePaths: ["~/project"],
+				additionalDirectories: ["~/legacy-dir"],
+				allowedPaths: ["~/legacy-file"],
+			}),
+		).toEqual({
+			readPaths: ["~/notes"],
+			readWritePaths: ["~/project", "~/legacy-dir", "~/legacy-file"],
+		});
+	});
+
+	it("legacy read-write paths allow both read and write access", () => {
+		const normalized = normalizePermissionConfig({
+			additionalDirectories: ["/Users/testuser/legacy-dir"],
+			allowedPaths: ["/Users/testuser/.gitconfig"],
+		});
+
+		expect(
+			checkAccess(
+				"/Users/testuser/legacy-dir/file.txt",
+				"read",
+				normalized.readPaths,
+				normalized.readWritePaths,
+			),
+		).toBe(true);
+		expect(
+			checkAccess(
+				"/Users/testuser/legacy-dir/file.txt",
+				"write",
+				normalized.readPaths,
+				normalized.readWritePaths,
+			),
+		).toBe(true);
+		expect(
+			checkAccess(
+				"/Users/testuser/.gitconfig",
+				"write",
+				normalized.readPaths,
+				normalized.readWritePaths,
+			),
+		).toBe(true);
+	});
+});
+
+describe("pathForPersistence", () => {
+	it("keeps project permissions as raw paths", async () => {
+		await expect(pathForPersistence("project", "../shared", "/Users/testuser/project")).resolves.toBe("../shared");
+	});
+
+	it("resolves global permissions to absolute paths", async () => {
+		await expect(pathForPersistence("global", "../shared", "/Users/testuser/project")).resolves.toBe(
+			"/Users/testuser/shared",
+		);
+	});
+});
+
+describe("readOnlyCoverage", () => {
+	it("detects read-write parent coverage", () => {
+		expect(readOnlyCoverage("/Users/testuser/project/src", [], ["/Users/testuser/project"])).toBe(
+			"read-write",
+		);
+	});
+
+	it("detects read-only parent coverage", () => {
+		expect(readOnlyCoverage("/Users/testuser/notes/api", ["/Users/testuser/notes"], [])).toBe("read");
+	});
+
+	it("returns null when no existing grant covers the path", () => {
+		expect(readOnlyCoverage("/Users/testuser/secrets", ["/Users/testuser/notes"], ["/Users/testuser/project"])).toBeNull();
 	});
 });
 
