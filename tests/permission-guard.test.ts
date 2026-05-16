@@ -134,9 +134,28 @@ describe("checkBroadGitAdd", () => {
 		expect(checkBroadGitAdd("git status --short && git add -A && git commit -m 'x'")).not.toBeNull();
 	});
 
+	it("blocks broad staging in newline-separated commands", () => {
+		expect(checkBroadGitAdd("git status --short\ngit add -A")).not.toBeNull();
+	});
+
 	it("recognizes git global options before add", () => {
 		expect(checkBroadGitAdd("git -C ../repo add -A")).not.toBeNull();
 		expect(checkBroadGitAdd("git -c core.quotePath=false add --all")).not.toBeNull();
+	});
+
+	it("blocks equivalent broad pathspecs", () => {
+		expect(checkBroadGitAdd("git add './.'")).not.toBeNull();
+		expect(checkBroadGitAdd("git add './/'")).not.toBeNull();
+		expect(checkBroadGitAdd("git add ':(top)'")).not.toBeNull();
+		expect(checkBroadGitAdd("git add ':(top).'")).not.toBeNull();
+		expect(checkBroadGitAdd("git add ':(top,literal)'")).not.toBeNull();
+	});
+
+	it("recognizes shell prefixes before git", () => {
+		expect(checkBroadGitAdd("GIT_OPTIONAL_LOCKS=0 git add -A")).not.toBeNull();
+		expect(checkBroadGitAdd("command git add -A")).not.toBeNull();
+		expect(checkBroadGitAdd("env git add -A")).not.toBeNull();
+		expect(checkBroadGitAdd("env GIT_OPTIONAL_LOCKS=0 git add -A")).not.toBeNull();
 	});
 
 	it("allows explicit file staging", () => {

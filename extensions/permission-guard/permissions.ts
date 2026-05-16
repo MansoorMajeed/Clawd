@@ -34,7 +34,7 @@ export function splitCommands(command: string): string[] {
 			continue;
 		}
 
-		if (ch === ";" || ch === "|") {
+		if (ch === "\n" || ch === "\r" || ch === ";" || ch === "|") {
 			segments.push(current.join(""));
 			current = [];
 			if (ch === "|" && i + 1 < command.length && command[i + 1] === "|") {
@@ -207,10 +207,111 @@ const GIT_GLOBAL_OPTIONS_WITH_INLINE_VALUE = [
 	"--config-env=",
 ];
 
-function findGitSubcommandIndex(tokens: string[]): number {
-	if (tokens[0] !== "git") return -1;
+const ENV_OPTIONS_WITH_VALUE = new Set([
+	"-u",
+	"--unset",
+	"-C",
+	"--chdir",
+	"-S",
+	"--split-string",
+	"--block-signal",
+	"--default-signal",
+	"--ignore-signal",
+]);
 
-	let i = 1;
+const ENV_OPTIONS_WITH_INLINE_VALUE = [
+	"--unset=",
+	"--chdir=",
+	"--split-string=",
+	"--block-signal=",
+	"--default-signal=",
+	"--ignore-signal=",
+];
+
+function isEnvironmentAssignment(token: string): boolean {
+	return /^[A-Za-z_][A-Za-z0-9_]*=.*/.test(token);
+}
+
+function skipEnvInvocation(tokens: string[], index: number): number {
+	let i = index + 1;
+
+	while (i < tokens.length) {
+		const token = tokens[i];
+
+		if (token === "--") {
+			i++;
+			break;
+		}
+
+		if (isEnvironmentAssignment(token)) {
+			i++;
+			continue;
+		}
+
+		if (ENV_OPTIONS_WITH_VALUE.has(token)) {
+			i += 2;
+			continue;
+		}
+
+		if (ENV_OPTIONS_WITH_INLINE_VALUE.some((option) => token.startsWith(option))) {
+			i++;
+			continue;
+		}
+
+		if (token === "-i" || token === "-") {
+			i++;
+			continue;
+		}
+
+		break;
+	}
+
+	return i;
+}
+
+function skipCommandInvocation(tokens: string[], index: number): number {
+	let i = index + 1;
+
+	while (tokens[i] === "-p") {
+		i++;
+	}
+
+	if (tokens[i] === "-v" || tokens[i] === "-V") {
+		return tokens.length;
+	}
+
+	return i;
+}
+
+function findGitCommandIndex(tokens: string[]): number {
+	let i = 0;
+
+	while (i < tokens.length) {
+		while (isEnvironmentAssignment(tokens[i])) {
+			i++;
+		}
+
+		if (tokens[i] === "env") {
+			i = skipEnvInvocation(tokens, i);
+			continue;
+		}
+
+		if (tokens[i] === "command") {
+			i = skipCommandInvocation(tokens, i);
+			continue;
+		}
+
+		break;
+	}
+
+	return tokens[i] === "git" ? i : -1;
+}
+
+function findGitSubcommandIndex(tokens: string[]): number {
+	const gitCommandIndex = findGitCommandIndex(tokens);
+	if (gitCommandIndex === -1) return -1;
+
+	let i = gitCommandIndex + 1;
 	while (i < tokens.length) {
 		const token = tokens[i];
 
@@ -254,8 +355,27 @@ function isInteractiveGitAddOption(token: string): boolean {
 	return token.slice(1).includes("p") || token.slice(1).includes("i");
 }
 
+function isCurrentDirectoryPathspec(token: string): boolean {
+	const normalized = token.replace(/\/+/g, "/").replace(/\/+$/, "");
+	return normalized === "." || normalized === "./.";
+}
+
+function isTopPathspec(token: string): boolean {
+	if (token === ":/") return true;
+	if (!token.startsWith(":(")) return false;
+
+	const closeParen = token.indexOf(")");
+	if (closeParen === -1) return false;
+
+	const magic = token.slice(2, closeParen).split(",");
+	if (!magic.includes("top")) return false;
+
+	const remainder = token.slice(closeParen + 1);
+	return remainder === "" || remainder === "/" || isCurrentDirectoryPathspec(remainder);
+}
+
 function isBroadGitAddPathspec(token: string): boolean {
-	return token === "." || token === "./" || token === ":/";
+	return isCurrentDirectoryPathspec(token) || isTopPathspec(token);
 }
 
 export function checkBroadGitAdd(command: string): { description: string } | null {
