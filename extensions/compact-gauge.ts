@@ -39,6 +39,7 @@ function render(ctx: ExtensionContext): void {
 
 export default function (pi: ExtensionAPI) {
 	pi.on("session_start", (_event, ctx) => render(ctx));
+	pi.on("turn_end", (_event, ctx) => render(ctx));
 	pi.on("agent_end", (_event, ctx) => render(ctx));
 	pi.on("session_compact", (_event, ctx) => render(ctx));
 	pi.on("session_switch", (_event, ctx) => render(ctx));

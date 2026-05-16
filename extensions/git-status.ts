@@ -111,6 +111,7 @@ export default function (pi: ExtensionAPI) {
 		});
 	};
 	pi.on("session_start", (_event, ctx) => fire(ctx));
+	pi.on("turn_end", (_event, ctx) => fire(ctx));
 	pi.on("agent_end", (_event, ctx) => fire(ctx));
 	pi.on("session_compact", (_event, ctx) => fire(ctx));
 	pi.on("session_switch", (_event, ctx) => fire(ctx));
