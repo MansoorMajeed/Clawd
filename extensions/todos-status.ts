@@ -4,6 +4,10 @@
  * Shows `todos <open>/<total>` on the extension status row. Hidden when
  * the todo directory is empty or absent. Matches the directory and
  * closed-status semantics used by extensions/todos.ts.
+ *
+ * Todo files written by extensions/todos.ts start with a JSON object
+ * (front matter), optionally followed by markdown body. Keep this parser
+ * in sync with that format.
  */
 
 import { readdirSync, readFileSync } from "fs";
@@ -19,6 +23,70 @@ function resolveTodosDir(cwd: string): string {
 	const override = process.env[TODO_PATH_ENV];
 	if (override && override.trim()) return path.resolve(cwd, override.trim());
 	return path.resolve(cwd, TODO_DIR_NAME);
+}
+
+// Find the end index of the leading JSON object in a todo file. Returns -1
+// if the file doesn't start with `{` or the object is unterminated. Mirrors
+// the implementation in extensions/todos.ts.
+function findJsonObjectEnd(content: string): number {
+	let depth = 0;
+	let inString = false;
+	let escaped = false;
+
+	for (let i = 0; i < content.length; i += 1) {
+		const char = content[i];
+
+		if (inString) {
+			if (escaped) {
+				escaped = false;
+				continue;
+			}
+			if (char === "\\") {
+				escaped = true;
+				continue;
+			}
+			if (char === "\"") inString = false;
+			continue;
+		}
+
+		if (char === "\"") {
+			inString = true;
+			continue;
+		}
+		if (char === "{") {
+			depth += 1;
+			continue;
+		}
+		if (char === "}") {
+			depth -= 1;
+			if (depth === 0) return i;
+		}
+	}
+	return -1;
+}
+
+/**
+ * Parses the leading JSON front-matter of a todo file and returns its
+ * lowercased status, defaulting to "open" when the file is empty,
+ * malformed, or missing the status field.
+ */
+export function parseTodoStatus(content: string): string {
+	if (!content.startsWith("{")) return "open";
+	const end = findJsonObjectEnd(content);
+	if (end === -1) return "open";
+	try {
+		const parsed = JSON.parse(content.slice(0, end + 1)) as { status?: unknown };
+		if (parsed && typeof parsed.status === "string" && parsed.status.trim()) {
+			return parsed.status.toLowerCase();
+		}
+	} catch {
+		// fall through
+	}
+	return "open";
+}
+
+export function isTodoClosed(status: string): boolean {
+	return CLOSED_STATUSES.has(status);
 }
 
 function countTodos(cwd: string): { open: number; total: number } {
@@ -37,13 +105,11 @@ function countTodos(cwd: string): { open: number; total: number } {
 		total++;
 		let status = "open";
 		try {
-			const text = readFileSync(path.join(dir, name), "utf8");
-			const match = text.match(/^status:\s*"?([A-Za-z_-]+)"?/m);
-			if (match) status = match[1].toLowerCase();
+			status = parseTodoStatus(readFileSync(path.join(dir, name), "utf8"));
 		} catch {
 			// keep default
 		}
-		if (!CLOSED_STATUSES.has(status)) open++;
+		if (!isTodoClosed(status)) open++;
 	}
 	return { open, total };
 }
