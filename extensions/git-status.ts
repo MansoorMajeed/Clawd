@@ -17,11 +17,12 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 const STATUS_KEY = "git-status";
 const GIT_TIMEOUT_MS = 2000;
 
-type DirtyCounts = {
+export type DirtyCounts = {
 	modified: number;
 	added: number;
 	deleted: number;
 	untracked: number;
+	unmerged: number;
 };
 
 function run(cwd: string, args: string[]): Promise<string | null> {
@@ -33,17 +34,70 @@ function run(cwd: string, args: string[]): Promise<string | null> {
 	});
 }
 
-function parseStatus(out: string): DirtyCounts {
-	const counts: DirtyCounts = { modified: 0, added: 0, deleted: 0, untracked: 0 };
+/**
+ * Parses `git status --porcelain` output into bucketed counts.
+ *
+ * Porcelain v1 emits two-char XY codes per entry. We classify them in
+ * priority order so the indicator never renders clean on a dirty tree:
+ *   - `!!` ignored        → skipped
+ *   - `??` untracked      → untracked
+ *   - any `U`/`AA`/`DD`   → unmerged (conflict)
+ *   - any M/R/C/T         → modified (content/path change)
+ *   - any A               → added
+ *   - any D               → deleted
+ *   - anything else       → unmerged (catch-all so unknown codes surface)
+ */
+export function parseStatus(out: string): DirtyCounts {
+	const counts: DirtyCounts = {
+		modified: 0,
+		added: 0,
+		deleted: 0,
+		untracked: 0,
+		unmerged: 0,
+	};
 	for (const line of out.split("\n")) {
 		if (line.length < 2) continue;
 		const code = line.slice(0, 2);
-		if (code === "??") counts.untracked++;
-		else if (code.includes("M")) counts.modified++;
-		else if (code.includes("A")) counts.added++;
-		else if (code.includes("D")) counts.deleted++;
+		if (code === "!!") continue;
+		if (code === "??") {
+			counts.untracked++;
+			continue;
+		}
+		if (code.includes("U") || code === "AA" || code === "DD") {
+			counts.unmerged++;
+			continue;
+		}
+		if (
+			code.includes("M") ||
+			code.includes("R") ||
+			code.includes("C") ||
+			code.includes("T")
+		) {
+			counts.modified++;
+			continue;
+		}
+		if (code.includes("A")) {
+			counts.added++;
+			continue;
+		}
+		if (code.includes("D")) {
+			counts.deleted++;
+			continue;
+		}
+		counts.unmerged++;
 	}
 	return counts;
+}
+
+export function isDirty(counts: DirtyCounts): boolean {
+	return (
+		counts.modified +
+			counts.added +
+			counts.deleted +
+			counts.untracked +
+			counts.unmerged >
+		0
+	);
 }
 
 function formatDuration(ms: number): string {
@@ -60,12 +114,13 @@ function formatDuration(ms: number): string {
 	return remHours > 0 ? `${days}d${remHours}h` : `${days}d`;
 }
 
-function formatDirty(counts: DirtyCounts): string {
+export function formatDirty(counts: DirtyCounts): string {
 	const parts: string[] = [];
 	if (counts.modified) parts.push(`${counts.modified}M`);
 	if (counts.added) parts.push(`${counts.added}A`);
 	if (counts.deleted) parts.push(`${counts.deleted}D`);
 	if (counts.untracked) parts.push(`${counts.untracked}?`);
+	if (counts.unmerged) parts.push(`${counts.unmerged}U`);
 	return parts.join(" ");
 }
 
@@ -87,17 +142,26 @@ async function compute(
 	return { counts, sinceCommit };
 }
 
+// Monotonic id so that an older, slower probe cannot overwrite a newer
+// result. Lifecycle events fan-out to async git probes; without this the
+// statusline can be stamped with stale state when probes finish out of order.
+let renderSeq = 0;
+let appliedSeq = 0;
+
 async function render(ctx: ExtensionContext): Promise<void> {
 	if (!ctx.hasUI) return;
+	const mySeq = ++renderSeq;
 	const result = await compute(ctx.cwd);
 	if (!ctx.hasUI) return; // bail if UI torn down meanwhile
+	if (mySeq < appliedSeq) return; // a newer probe already applied
+	appliedSeq = mySeq;
 	if (!result) {
 		ctx.ui.setStatus(STATUS_KEY, undefined);
 		return;
 	}
 	const theme = ctx.ui.theme;
 	const { counts, sinceCommit } = result;
-	const dirty = counts.modified + counts.added + counts.deleted + counts.untracked > 0;
+	const dirty = isDirty(counts);
 
 	const head = dirty ? `git ${formatDirty(counts)}` : theme.fg("success", "git ✓");
 	const tail = sinceCommit ? ` ${theme.fg("dim", `· ${sinceCommit}`)}` : "";
