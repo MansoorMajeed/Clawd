@@ -130,29 +130,16 @@ function formatStatus(state: TokenTpsState, ctx: ExtensionContext): string {
 	const current = formatNumber(state.currentTps);
 	const peak = formatNumber(state.peakTps);
 	const average = formatNumber(state.averageTps);
-	const separator = theme.fg("dim", "·");
 
 	if (state.active) {
 		return [
-			theme.fg("accent", "● tok/s"),
-			theme.fg("accent", current),
-			theme.fg("muted", "now"),
-			separator,
-			theme.fg("warning", `↑${peak} peak`),
-			separator,
-			theme.fg("muted", `${average} avg`),
+			theme.fg("accent", `● ${current} tps`),
+			theme.fg("warning", `↑${peak}`),
+			theme.fg("muted", `⌀${average}`),
 		].join(" ");
 	}
 
-	return [
-		theme.fg("dim", "tok/s last"),
-		theme.fg("dim", current),
-		theme.fg("dim", "now"),
-		separator,
-		theme.fg("dim", `↑${peak} peak`),
-		separator,
-		theme.fg("dim", `${average} avg`),
-	].join(" ");
+	return theme.fg("dim", `${current} tps ↑${peak} ⌀${average}`);
 }
 
 function updateStatus(ctx: ExtensionContext, state: TokenTpsState | undefined): void {
