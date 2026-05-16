@@ -33,7 +33,13 @@ function formatStatus(tokens: number, ctx: ExtensionContext): string {
 function render(ctx: ExtensionContext): void {
 	if (!ctx.hasUI) return;
 	const usage = ctx.getContextUsage();
-	if (!usage) return;
+	// After compaction, pi reports `{ tokens: null, percent: null }` until a
+	// fresh assistant response arrives. Clear the gauge rather than render
+	// "0% (0k/150k)" — falsely reassuring.
+	if (!usage || usage.tokens == null) {
+		ctx.ui.setStatus(STATUS_KEY, undefined);
+		return;
+	}
 	ctx.ui.setStatus(STATUS_KEY, formatStatus(usage.tokens, ctx));
 }
 
