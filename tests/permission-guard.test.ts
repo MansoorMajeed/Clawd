@@ -1,4 +1,7 @@
 import { describe, it, expect } from "vitest";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
 	checkHardBlock,
 	checkBroadGitAdd,
@@ -11,6 +14,7 @@ import {
 	stripQuotedContent,
 } from "../extensions/permission-guard/permissions.js";
 import {
+	buildPermissionScopeOptions,
 	normalizePermissionConfig,
 	pathForPersistence,
 	readOnlyCoverage,
@@ -461,6 +465,83 @@ describe("normalizePermissionConfig", () => {
 				normalized.readWritePaths,
 			),
 		).toBe(true);
+	});
+});
+
+describe("buildPermissionScopeOptions", () => {
+	async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
+		const dir = await mkdtemp(join(tmpdir(), "permission-scope-"));
+		try {
+			return await fn(dir);
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	}
+
+	it("puts repo root first for paths inside a git repo", async () => {
+		await withTempDir(async (dir) => {
+			const repo = join(dir, "org", "repo");
+			const src = join(repo, "src");
+			const file = join(src, "foo.ts");
+			await mkdir(join(repo, ".git"), { recursive: true });
+			await mkdir(src, { recursive: true });
+			await writeFile(file, "export {};\n");
+
+			const options = await buildPermissionScopeOptions(file, dir, "read");
+
+			expect(options.map((option) => option.kind)).toEqual(["repo", "directory", "exact"]);
+			expect(options.map((option) => option.resolvedPath)).toEqual([repo, src, file]);
+			expect(options[0]?.label).toBe(`Repo root: ${repo}`);
+		});
+	});
+
+	it("omits repo root outside a git repo", async () => {
+		await withTempDir(async (dir) => {
+			const folder = join(dir, "notes");
+			const file = join(folder, "api.md");
+			await mkdir(folder, { recursive: true });
+			await writeFile(file, "# API\n");
+
+			const options = await buildPermissionScopeOptions(file, dir, "read");
+
+			expect(options.map((option) => option.kind)).toEqual(["directory", "exact"]);
+			expect(options.map((option) => option.resolvedPath)).toEqual([folder, file]);
+		});
+	});
+
+	it("detects repo root from nearest existing parent for missing leaf paths", async () => {
+		await withTempDir(async (dir) => {
+			const repo = join(dir, "repo");
+			const missingFile = join(repo, "new", "foo.ts");
+			await mkdir(join(repo, ".git"), { recursive: true });
+
+			const options = await buildPermissionScopeOptions(missingFile, dir, "write");
+
+			expect(options.map((option) => option.kind)).toEqual(["repo", "directory", "exact"]);
+			expect(options.map((option) => option.resolvedPath)).toEqual([
+				repo,
+				join(repo, "new"),
+				missingFile,
+			]);
+		});
+	});
+
+	it("deduplicates directory and exact options for directory paths", async () => {
+		await withTempDir(async (dir) => {
+			const folder = join(dir, "notes");
+			await mkdir(folder, { recursive: true });
+
+			const options = await buildPermissionScopeOptions(folder, dir, "read");
+
+			expect(options.map((option) => option.kind)).toEqual(["directory"]);
+			expect(options.map((option) => option.resolvedPath)).toEqual([folder]);
+		});
+	});
+
+	it("does not suggest dangerously broad root paths", async () => {
+		const options = await buildPermissionScopeOptions("/", "/", "read");
+
+		expect(options).toEqual([]);
 	});
 });
 
