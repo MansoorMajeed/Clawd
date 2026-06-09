@@ -7,9 +7,9 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { resolve, dirname } from "node:path";
-import { realpath } from "node:fs/promises";
+import { Key, matchesKey, truncateToWidth, type Component } from "@mariozechner/pi-tui";
+import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, parse, relative, resolve } from "node:path";
 import {
 	checkHardBlock,
 	checkBroadGitAdd,
@@ -36,8 +36,19 @@ interface PermissionGuardContext {
 	cwd: string;
 	ui: {
 		select(title: string, choices: string[]): Promise<string | null | undefined>;
+		input?(title: string, placeholder?: string): Promise<string | undefined>;
 		notify(message: string, type?: string): void;
+		custom?<T>(
+			factory: (tui: { requestRender(): void }, theme: any, keybindings: any, done: (result: T) => void) => Component,
+		): Promise<T>;
 	};
+}
+
+export interface PermissionScopeOption {
+	kind: "repo" | "directory" | "exact";
+	label: string;
+	rawPath: string;
+	resolvedPath: string;
 }
 
 export function normalizePermissionConfig(config: PermissionsConfig): NormalizedPermissionsConfig {
@@ -101,6 +112,209 @@ export function readOnlyCoverage(
 		return "read";
 	}
 	return null;
+}
+
+function isAncestorOrSame(parent: string, child: string): boolean {
+	const rel = relative(parent, child);
+	return rel === "" || (!!rel && !rel.startsWith("..") && !isAbsolute(rel));
+}
+
+async function isDangerouslyBroadPath(path: string): Promise<boolean> {
+	const root = parse(path).root;
+	if (path === root) return true;
+
+	const home = process.env.HOME;
+	if (!home) return false;
+
+	const resolvedHome = resolve(home);
+	if (path === resolvedHome) return true;
+	try {
+		return path === await realpath(resolvedHome);
+	} catch {
+		return false;
+	}
+}
+
+export async function isPermissionScopeAllowedForPath(scopePath: string, targetPath: string): Promise<boolean> {
+	return !(await isDangerouslyBroadPath(scopePath)) && isAncestorOrSame(scopePath, targetPath);
+}
+
+async function nearestExistingDir(rawPath: string, cwd: string): Promise<string> {
+	let current = resolve(cwd, expandTilde(rawPath));
+	while (true) {
+		try {
+			const info = await stat(current);
+			return info.isDirectory() ? current : dirname(current);
+		} catch {
+			const parent = dirname(current);
+			if (parent === current) return current;
+			current = parent;
+		}
+	}
+}
+
+async function findGitRoot(startDir: string): Promise<string | null> {
+	let current = startDir;
+	while (true) {
+		try {
+			await stat(resolve(current, ".git"));
+			return current;
+		} catch {
+			const parent = dirname(current);
+			if (parent === current) return null;
+			current = parent;
+		}
+	}
+}
+
+export async function buildPermissionScopeOptions(
+	rawPath: string,
+	cwd: string,
+	_mode: AccessMode,
+): Promise<PermissionScopeOption[]> {
+	const resolvedPath = await resolvePath(rawPath, cwd);
+	let isDirectory = false;
+	try {
+		isDirectory = (await stat(resolvedPath)).isDirectory();
+	} catch {
+		isDirectory = false;
+	}
+
+	const directory = isDirectory ? resolvedPath : dirname(resolvedPath);
+	const existingDir = await nearestExistingDir(rawPath, cwd);
+	const gitRoot = await findGitRoot(existingDir);
+	const options: PermissionScopeOption[] = [];
+	const seen = new Set<string>();
+
+	async function add(kind: PermissionScopeOption["kind"], labelPrefix: string, rawCandidate: string) {
+		const resolvedCandidate = await resolvePath(rawCandidate, cwd);
+		if (!(await isPermissionScopeAllowedForPath(resolvedCandidate, resolvedPath)) || seen.has(resolvedCandidate)) return;
+		seen.add(resolvedCandidate);
+		options.push({
+			kind,
+			label: `${labelPrefix}: ${resolvedCandidate}`,
+			rawPath: rawCandidate,
+			resolvedPath: resolvedCandidate,
+		});
+	}
+
+	if (gitRoot && isAncestorOrSame(gitRoot, resolvedPath)) {
+		await add("repo", "Repo root", gitRoot);
+	}
+	await add("directory", "Directory", directory);
+	await add("exact", isDirectory ? "Exact path" : "File only", rawPath);
+
+	return options;
+}
+
+type ScopePromptResult =
+	| { action: "grant"; option: PermissionScopeOption }
+	| { action: "once" }
+	| { action: "custom" }
+	| { action: "deny" };
+
+async function promptPermissionScope(
+	ctx: PermissionGuardContext,
+	mode: AccessMode,
+	toolName: string,
+	rawPath: string,
+	options: PermissionScopeOption[],
+): Promise<ScopePromptResult | null> {
+	const items: Array<{ label: string; result: ScopePromptResult }> = [
+		...options.map((option) => ({
+			label: option.label,
+			result: { action: "grant", option } as ScopePromptResult,
+		})),
+		{ label: "Allow once", result: { action: "once" } },
+		{ label: "Custom path...", result: { action: "custom" } },
+		{ label: "Deny", result: { action: "deny" } },
+	];
+	const title = `${mode === "read" ? "Read" : "Read-write"} permission required: ${toolName} ${rawPath}`;
+
+	if (!ctx.ui.custom) {
+		const choice = await ctx.ui.select(title, items.map((item) => item.label));
+		return items.find((item) => item.label === choice)?.result ?? null;
+	}
+
+	return ctx.ui.custom<ScopePromptResult | null>((tui, theme, _keybindings, done) => {
+		class ScopeSelector implements Component {
+			private selected = 0;
+
+			handleInput(data: string) {
+				const digit = data.match(/^[1-9]$/);
+				if (digit) {
+					const index = Number(digit[0]) - 1;
+					const item = items[index];
+					if (item) done(item.result);
+					return;
+				}
+
+				if (matchesKey(data, Key.up) || data === "k") {
+					this.selected = Math.max(0, this.selected - 1);
+					tui.requestRender();
+					return;
+				}
+				if (matchesKey(data, Key.down) || data === "j") {
+					this.selected = Math.min(items.length - 1, this.selected + 1);
+					tui.requestRender();
+					return;
+				}
+				if (matchesKey(data, Key.enter) || data === "\n") {
+					done(items[this.selected]?.result ?? null);
+					return;
+				}
+				if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
+					done(null);
+				}
+			}
+
+			render(width: number): string[] {
+				const lines = [
+					theme.fg("accent", theme.bold(title)),
+					"",
+				];
+				for (let i = 0; i < items.length; i++) {
+					const prefix = i === this.selected ? "→ " : "  ";
+					const line = `${prefix}${i + 1}. ${items[i]!.label}`;
+					const rendered = truncateToWidth(line, width);
+					lines.push(i === this.selected ? theme.fg("accent", rendered) : rendered);
+				}
+				lines.push("", theme.fg("dim", "1-9 select • ↑↓/j/k navigate • enter select • esc cancel"));
+				return lines;
+			}
+
+			invalidate() {}
+		}
+
+		return new ScopeSelector();
+	});
+}
+
+async function promptSelectedPermissionPath(
+	ctx: PermissionGuardContext,
+	mode: AccessMode,
+	toolName: string,
+	rawPath: string,
+): Promise<{ rawPath: string; resolvedPath: string; once: boolean } | null> {
+	const requestedResolvedPath = await resolvePath(rawPath, ctx.cwd);
+	const options = await buildPermissionScopeOptions(rawPath, ctx.cwd, mode);
+	const choice = await promptPermissionScope(ctx, mode, toolName, rawPath, options);
+	if (!choice || choice.action === "deny") return null;
+	if (choice.action === "once") return { rawPath, resolvedPath: requestedResolvedPath, once: true };
+	if (choice.action === "grant") {
+		if (!(await isPermissionScopeAllowedForPath(choice.option.resolvedPath, requestedResolvedPath))) return null;
+		return { rawPath: choice.option.rawPath, resolvedPath: choice.option.resolvedPath, once: false };
+	}
+
+	if (!ctx.ui.input) return null;
+	const customPath = (await ctx.ui.input("Custom permission path", rawPath))?.trim();
+	if (!customPath) return null;
+	const resolvedCustomPath = await resolvePath(customPath, ctx.cwd);
+	if (!(await isPermissionScopeAllowedForPath(resolvedCustomPath, requestedResolvedPath))) {
+		ctx.ui.notify(`Refusing permission path outside requested access: ${resolvedCustomPath}`, "error");
+		return null;
+	}
+	return { rawPath: customPath, resolvedPath: resolvedCustomPath, once: false };
 }
 
 async function saveConfig(configPath: string, config: PermissionsConfig): Promise<void> {
@@ -344,40 +558,21 @@ export default function (pi: ExtensionAPI) {
 			// --yolo skips file permission prompts
 			if (yoloMode) continue;
 
-			const choices =
-				mode === "read"
-					? [
-							"Allow once",
-							"Allow always — read (project)",
-							"Allow always — read+write (project)",
-							"Allow always — read (global)",
-							"Allow always — read+write (global)",
-							"Deny",
-						]
-					: [
-							"Allow once",
-							"Allow always — read+write (project)",
-							"Allow always — read+write (global)",
-							"Deny",
-						];
+			const selected = await promptSelectedPermissionPath(ctx, mode, event.toolName, rawPath);
 
-			const choice = await ctx.ui.select(`Permission Required: ${event.toolName} ${rawPath}`, choices);
-
-			if (choice === "Deny" || !choice) {
+			if (!selected) {
 				return {
 					block: true,
 					reason: `Blocked: ${event.toolName} on ${rawPath} — outside allowed paths.`,
 				};
 			}
 
-			if (choice === "Allow once") {
+			if (selected.once) {
 				continue;
 			}
 
-			const persistMode = choice.includes("read+write") ? "write" : "read";
-			const scope = choice.includes("global") ? "global" : "project";
-			addSessionPath(persistMode, resolved);
-			await persistEntry(scope, persistMode, rawPath, ctx.cwd);
+			addSessionPath(mode, selected.resolvedPath);
+			await promptPersist(ctx, mode, selected.rawPath);
 		}
 	});
 }
