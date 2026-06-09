@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -15,6 +15,7 @@ import {
 } from "../extensions/permission-guard/permissions.js";
 import {
 	buildPermissionScopeOptions,
+	isPermissionScopeAllowedForPath,
 	normalizePermissionConfig,
 	pathForPersistence,
 	readOnlyCoverage,
@@ -542,6 +543,56 @@ describe("buildPermissionScopeOptions", () => {
 		const options = await buildPermissionScopeOptions("/", "/", "read");
 
 		expect(options).toEqual([]);
+	});
+});
+
+describe("isPermissionScopeAllowedForPath", () => {
+	async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
+		const dir = await mkdtemp(join(tmpdir(), "permission-scope-"));
+		try {
+			return await fn(dir);
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	}
+
+	it("allows scopes that cover the requested path", async () => {
+		await withTempDir(async (dir) => {
+			const repo = join(dir, "repo");
+			const file = join(repo, "src", "foo.ts");
+
+			await expect(isPermissionScopeAllowedForPath(repo, file)).resolves.toBe(true);
+			await expect(isPermissionScopeAllowedForPath(file, file)).resolves.toBe(true);
+		});
+	});
+
+	it("rejects unrelated scopes for the requested path", async () => {
+		await withTempDir(async (dir) => {
+			await expect(
+				isPermissionScopeAllowedForPath(join(dir, "allowed"), join(dir, "secrets", "token.txt")),
+			).resolves.toBe(false);
+		});
+	});
+
+	it("rejects real home path when HOME is a symlink", async () => {
+		await withTempDir(async (dir) => {
+			const previousHome = process.env.HOME;
+			const realHome = join(dir, "real-home");
+			const linkHome = join(dir, "home-link");
+			await mkdir(realHome, { recursive: true });
+			try {
+				await symlink(realHome, linkHome);
+			} catch {
+				return;
+			}
+
+			process.env.HOME = linkHome;
+			try {
+				await expect(isPermissionScopeAllowedForPath(realHome, join(realHome, "file.txt"))).resolves.toBe(false);
+			} finally {
+				process.env.HOME = previousHome;
+			}
+		});
 	});
 });
 

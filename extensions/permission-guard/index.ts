@@ -119,11 +119,24 @@ function isAncestorOrSame(parent: string, child: string): boolean {
 	return rel === "" || (!!rel && !rel.startsWith("..") && !isAbsolute(rel));
 }
 
-function isDangerouslyBroadPath(path: string): boolean {
+async function isDangerouslyBroadPath(path: string): Promise<boolean> {
 	const root = parse(path).root;
 	if (path === root) return true;
+
 	const home = process.env.HOME;
-	return !!home && path === resolve(home);
+	if (!home) return false;
+
+	const resolvedHome = resolve(home);
+	if (path === resolvedHome) return true;
+	try {
+		return path === await realpath(resolvedHome);
+	} catch {
+		return false;
+	}
+}
+
+export async function isPermissionScopeAllowedForPath(scopePath: string, targetPath: string): Promise<boolean> {
+	return !(await isDangerouslyBroadPath(scopePath)) && isAncestorOrSame(scopePath, targetPath);
 }
 
 async function nearestExistingDir(rawPath: string, cwd: string): Promise<string> {
@@ -175,7 +188,7 @@ export async function buildPermissionScopeOptions(
 
 	async function add(kind: PermissionScopeOption["kind"], labelPrefix: string, rawCandidate: string) {
 		const resolvedCandidate = await resolvePath(rawCandidate, cwd);
-		if (isDangerouslyBroadPath(resolvedCandidate) || seen.has(resolvedCandidate)) return;
+		if (!(await isPermissionScopeAllowedForPath(resolvedCandidate, resolvedPath)) || seen.has(resolvedCandidate)) return;
 		seen.add(resolvedCandidate);
 		options.push({
 			kind,
@@ -283,11 +296,13 @@ async function promptSelectedPermissionPath(
 	toolName: string,
 	rawPath: string,
 ): Promise<{ rawPath: string; resolvedPath: string; once: boolean } | null> {
+	const requestedResolvedPath = await resolvePath(rawPath, ctx.cwd);
 	const options = await buildPermissionScopeOptions(rawPath, ctx.cwd, mode);
 	const choice = await promptPermissionScope(ctx, mode, toolName, rawPath, options);
 	if (!choice || choice.action === "deny") return null;
-	if (choice.action === "once") return { rawPath, resolvedPath: await resolvePath(rawPath, ctx.cwd), once: true };
+	if (choice.action === "once") return { rawPath, resolvedPath: requestedResolvedPath, once: true };
 	if (choice.action === "grant") {
+		if (!(await isPermissionScopeAllowedForPath(choice.option.resolvedPath, requestedResolvedPath))) return null;
 		return { rawPath: choice.option.rawPath, resolvedPath: choice.option.resolvedPath, once: false };
 	}
 
@@ -295,8 +310,8 @@ async function promptSelectedPermissionPath(
 	const customPath = (await ctx.ui.input("Custom permission path", rawPath))?.trim();
 	if (!customPath) return null;
 	const resolvedCustomPath = await resolvePath(customPath, ctx.cwd);
-	if (isDangerouslyBroadPath(resolvedCustomPath)) {
-		ctx.ui.notify(`Refusing dangerously broad permission path: ${resolvedCustomPath}`, "error");
+	if (!(await isPermissionScopeAllowedForPath(resolvedCustomPath, requestedResolvedPath))) {
+		ctx.ui.notify(`Refusing permission path outside requested access: ${resolvedCustomPath}`, "error");
 		return null;
 	}
 	return { rawPath: customPath, resolvedPath: resolvedCustomPath, once: false };
