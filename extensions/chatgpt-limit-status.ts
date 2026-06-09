@@ -242,8 +242,8 @@ function setUsageStatus(
 
 async function fetchUsage(
   ctx: ExtensionContext,
+  model = ctx.model,
 ): Promise<ChatGptUsageSnapshot | undefined> {
-  const model = ctx.model;
   if (!isOpenAICodexProvider(model?.provider)) {
     clearStatus(ctx);
     return undefined;
@@ -313,13 +313,22 @@ export function createLatestOnlyRunner<T>(
   return queue;
 }
 
-export default function (pi: ExtensionAPI) {
-  const queueUpdate = createLatestOnlyRunner<ExtensionContext>(async (ctx) => {
-    await fetchUsage(ctx);
-  });
+type RefreshRequest = {
+  ctx: ExtensionContext;
+  model?: ExtensionContext["model"];
+};
 
-  pi.on("session_start", (_event, ctx) => queueUpdate(ctx));
-  pi.on("model_select", (_event, ctx) => queueUpdate(ctx));
-  pi.on("agent_end", (_event, ctx) => queueUpdate(ctx));
+export default function (pi: ExtensionAPI) {
+  const queueUpdate = createLatestOnlyRunner<RefreshRequest>(
+    async (request) => {
+      await fetchUsage(request.ctx, request.model);
+    },
+  );
+
+  pi.on("session_start", (_event, ctx) => queueUpdate({ ctx }));
+  pi.on("model_select", (event, ctx) =>
+    queueUpdate({ ctx, model: event.model }),
+  );
+  pi.on("agent_end", (_event, ctx) => queueUpdate({ ctx }));
   pi.on("session_shutdown", (_event, ctx) => clearStatus(ctx));
 }

@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import {
+import { afterEach, describe, expect, it, vi } from "vitest";
+import registerChatGptLimitStatus, {
   buildUsageHeaders,
   createLatestOnlyRunner,
   formatChatGptLimitStatus,
@@ -18,6 +18,10 @@ function encodeBase64Url(value: unknown): string {
 function fakeJwt(payload: unknown): string {
   return `${encodeBase64Url({ alg: "none" })}.${encodeBase64Url(payload)}.`;
 }
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 async function waitFor(predicate: () => boolean): Promise<void> {
   for (let i = 0; i < 20; i++) {
@@ -223,6 +227,67 @@ describe("token metadata and headers", () => {
         email: "user@example.com",
       }),
     ).toBe(false);
+  });
+});
+
+describe("extension lifecycle", () => {
+  it("uses event.model during model_select instead of a stale ctx.model", async () => {
+    const handlers = new Map<string, (event: any, ctx: any) => void>();
+    const token = fakeJwt({
+      "https://api.openai.com/auth": {
+        chatgpt_account_id: "acct_test",
+      },
+    });
+    const codexModel = { provider: "openai-codex", id: "gpt-5.5" };
+    const staleModel = { provider: "anthropic", id: "claude" };
+    const getApiKeyAndHeaders = vi.fn(async () => ({
+      ok: true,
+      apiKey: token,
+    }));
+    const setStatus = vi.fn();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          rate_limit: {
+            primary_window: {
+              used_percent: 25,
+              limit_window_seconds: 18_000,
+              reset_at: Math.floor(Date.now() / 1000) + 3_600,
+            },
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    registerChatGptLimitStatus({
+      on(eventName: string, handler: (event: any, ctx: any) => void) {
+        handlers.set(eventName, handler);
+      },
+    } as any);
+
+    handlers.get("model_select")?.(
+      { model: codexModel },
+      {
+        model: staleModel,
+        hasUI: true,
+        modelRegistry: { getApiKeyAndHeaders },
+        ui: {
+          setStatus,
+          theme: {
+            fg: (_color: string, text: string) => text,
+          },
+        },
+      },
+    );
+
+    await waitFor(() => fetchMock.mock.calls.length === 1);
+
+    expect(getApiKeyAndHeaders).toHaveBeenCalledWith(codexModel);
+    expect(setStatus).toHaveBeenCalledWith(
+      "chatgpt-limit-status",
+      expect.stringContaining("GPT 5h 75%"),
+    );
   });
 });
 
