@@ -7,7 +7,7 @@
  *
  * See .scratch/plans/2026-05-05-ai-knowledge-extension.md for the design.
  */
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadConfig, getConfigPath } from "./config.js";
 import { runPicker } from "./picker.js";
 import { registerTools } from "./tools.js";

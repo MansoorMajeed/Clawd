@@ -12,7 +12,7 @@
  *   >=100%      bright red (bold error) — does not cap
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 const THRESHOLD_TOKENS = 150_000;
 const STATUS_KEY = "compact-gauge";

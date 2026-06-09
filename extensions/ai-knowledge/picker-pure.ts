@@ -1,4 +1,4 @@
-import { fuzzyMatch } from "@mariozechner/pi-tui";
+import { fuzzyMatch } from "@earendil-works/pi-tui";
 import type { ProjectEntry, Registry, TaskEntry } from "./types.js";
 
 export interface TaskRow {

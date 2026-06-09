@@ -1,5 +1,5 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { complete, getModel, type Message } from "@mariozechner/pi-ai";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { complete, getModel, type Message } from "@earendil-works/pi-ai";
 import { Type } from "@sinclair/typebox";
 
 interface SearchResult {
@@ -277,7 +277,7 @@ export default function (pi: ExtensionAPI) {
     },
 
     renderCall(args, theme) {
-      const { Text } = require("@mariozechner/pi-tui");
+      const { Text } = require("@earendil-works/pi-tui");
       const preview =
         args.context.length > 60
           ? args.context.slice(0, 60) + "..."
@@ -289,7 +289,7 @@ export default function (pi: ExtensionAPI) {
     },
 
     renderResult(result, { expanded }, theme) {
-      const { Text, Container, Spacer } = require("@mariozechner/pi-tui");
+      const { Text, Container, Spacer } = require("@earendil-works/pi-tui");
       const details = result.details as {
         query?: string;
         context?: string;

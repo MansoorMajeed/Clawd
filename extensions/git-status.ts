@@ -12,7 +12,7 @@
  */
 
 import { execFile } from "child_process";
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 const STATUS_KEY = "git-status";
 const GIT_TIMEOUT_MS = 2000;

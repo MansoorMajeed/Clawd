@@ -1,6 +1,6 @@
 # clawd
 
-Custom [Pi](https://github.com/badlogic/pi-mono) coding agent package. Lean, opinionated, multi-agent.
+Custom [Pi](https://github.com/earendil-works/pi) coding agent package. Lean, opinionated, multi-agent.
 
 ## Why
 
@@ -26,13 +26,13 @@ Pi (main agent, Opus)
 ## Install
 
 ```bash
-npm install -g @mariozechner/pi-coding-agent
+npm install -g @earendil-works/pi-coding-agent
 pi install git:github.com/MansoorMajeed/Clawd
 ```
 
 ## Prerequisites
 
-- [Pi](https://github.com/badlogic/pi-mono) installed (`npm install -g @mariozechner/pi-coding-agent`)
+- [Pi](https://github.com/earendil-works/pi) installed (`npm install -g @earendil-works/pi-coding-agent`)
 
 ## Updating
 

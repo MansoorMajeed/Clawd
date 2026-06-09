@@ -13,8 +13,8 @@
  * Requires a focus arg. No focus = error (use /compact for plain summarization).
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { complete, type Message } from "@mariozechner/pi-ai";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { complete, type Message } from "@earendil-works/pi-ai";
 import {
 	BorderedLoader,
 	buildSessionContext,
@@ -22,7 +22,7 @@ import {
 	DEFAULT_COMPACTION_SETTINGS,
 	ExtensionInputComponent,
 	generateSummary,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 
 const REFINE_SYSTEM_PROMPT = `You are helping a user prepare a session handoff. Given the conversation history and the user's stated focus for the next session, produce ONE concise sentence describing what the next session should work on.
 

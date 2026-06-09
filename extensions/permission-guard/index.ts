@@ -6,8 +6,8 @@
  * commands (no override). Replaces dangerous-command-guard.ts.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Key, matchesKey, truncateToWidth, type Component } from "@mariozechner/pi-tui";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Key, matchesKey, truncateToWidth, type Component } from "@earendil-works/pi-tui";
 import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, parse, relative, resolve } from "node:path";
 import {

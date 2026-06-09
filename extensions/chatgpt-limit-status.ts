@@ -1,7 +1,7 @@
 import type {
   ExtensionAPI,
   ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 
 const STATUS_KEY = "chatgpt-limit-status";
 const CHATGPT_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";

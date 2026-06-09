@@ -3,7 +3,7 @@ import {
 	type ExtensionAPI,
 	type ExtensionContext,
 	type Theme,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import {
 	Container,
 	type Focusable,
@@ -12,7 +12,7 @@ import {
 	Text,
 	TUI,
 	type KeybindingsManager,
-} from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-tui";
 import { loadRegistry, saveRegistry } from "./registry.js";
 import { addProject, addTask, validateSlug } from "./registry-pure.js";
 import { gitCommit } from "./git.js";
