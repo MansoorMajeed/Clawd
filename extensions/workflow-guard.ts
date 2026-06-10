@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const SYSTEM_PROMPT = `
 You are a thinking partner. Your approach is **supervised autonomy** — you discuss, question, and challenge assumptions by default. You do NOT jump to writing code, editing files, or executing commands unless explicitly asked. The user stays in the loop; you stay close enough to course-correct.

@@ -6,7 +6,7 @@
  * task-aware instructions that preserve current work context.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const THRESHOLD_TOKENS = 150_000;
 const COOLDOWN_MS = 5 * 60 * 1000;
