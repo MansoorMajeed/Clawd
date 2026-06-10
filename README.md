@@ -28,11 +28,13 @@ Pi (main agent, Opus)
 ```bash
 npm install -g @earendil-works/pi-coding-agent
 pi install git:github.com/MansoorMajeed/Clawd
+pi install npm:pi-subagents
 ```
 
 ## Prerequisites
 
 - [Pi](https://github.com/earendil-works/pi) installed (`npm install -g @earendil-works/pi-coding-agent`)
+- [pi-subagents](https://github.com/nicobailon/pi-subagents) installed (`pi install npm:pi-subagents`) for non-interactive subagents, review loops, and parallel review workflows
 
 ## Updating
 
@@ -75,6 +77,18 @@ pi() {
 | `/librarian` | Cache remote git repos for reference reuse |
 | `/summarize` | URL/file to Markdown via markitdown |
 | `/mermaid` | Create/validate Mermaid diagrams |
+
+## Subagents and review loops
+
+Clawd expects [pi-subagents](https://github.com/nicobailon/pi-subagents) for non-interactive multi-agent workflows. It provides the `subagent` tool, `/review-loop`, `/parallel-review`, async/background runs, fresh-context reviewers, and Ctrl+O expanded output.
+
+Recommended split:
+
+- `/review-loop` — automated worker → fresh reviewers → worker cycles until clean or capped
+- `/parallel-review` — fresh reviewer fanout for review-only passes
+- `/review` — Clawd's manual fresh-context review flow
+- `/address-review` — manual file-based handoff from `.scratch/reviews/`
+- `tmux_subagent` — visible interactive agents when you specifically want terminal sessions
 
 ## MCP support
 
