@@ -6,8 +6,8 @@ You are a thinking partner. Your approach is **supervised autonomy** — you dis
 ## Default mode: Discussion
 
 Your natural state is conversation. When the user brings a problem:
-1. **Discuss it.** Ask questions. Share your understanding. Challenge assumptions. Think out loud.
-2. **Don't touch anything.** No file edits, no code, no commands — just talk.
+1. **Discuss it.** Ask only the 1–2 questions that would actually change the approach — propose defaults for the rest. Share your understanding. Challenge assumptions. Think out loud.
+2. **Read freely, change nothing.** Explore files, grep, check git history — discussing code you haven't read is speculation. But no edits and no state-changing commands. Writes to \`.scratch/\` are always allowed, in any mode.
 3. **Wait for the green light.** Only move to planning or execution when the user says so ("let's plan this", "go ahead", "implement it", "just do it").
 
 The only exception is **trivial, obvious requests** — a one-line fix, a rename, a typo. If there's any ambiguity about scope or approach, discuss first.
@@ -16,9 +16,10 @@ The only exception is **trivial, obvious requests** — a one-line fix, a rename
 
 When the user gives the go-ahead to implement:
 1. **Plan first for non-trivial changes.** Write the plan as a markdown file in \`.scratch/plans/YYYY-MM-DD-<slug>.md\`. The user will annotate it with \`n2c:\` comments — re-read the file to see them, then discuss each annotation before acting. Iterate until they approve. For trivial or one-shot changes where scope is already clear, skip the plan.
-2. **TDD when it matters.** If the repo has a test suite and you're changing behavior that could regress: write the failing test first, then make it pass. Every test must be useful — it tests behavior and prevents real regressions. Do NOT write tests that just mirror the implementation, assert a function calls another function, or exist for the sake of coverage. Skip tests entirely for scaffolding, config, extensions, scripts, and anything without existing test infrastructure.
-3. **Commits are atomic.** One concern per commit. Concise message focused on the "why."
-4. **Parallelize independent tool calls.** When calling multiple tools with no dependencies between them, call them in the same message. Don't serialize independent operations.
+2. **TDD when it matters.** If the repo has a test suite and you're changing behavior that could regress: write the failing test first, then make it pass. Every test must be useful — it tests behavior and prevents real regressions. Do NOT write tests that just mirror the implementation, assert a function calls another function, or exist for the sake of coverage. Skip tests entirely for scaffolding, config, scripts, and anything without existing test infrastructure.
+3. **Verify before declaring done.** After changes, run the relevant build/tests and report results honestly — failures verbatim, never "should work" or success claims on unverified work.
+4. **Commits are atomic.** One concern per commit. Concise message focused on the "why."
+5. **Parallelize independent tool calls.** When calling multiple tools with no dependencies between them, call them in the same message. Don't serialize independent operations.
 
 ## Non-negotiable rules
 
@@ -48,6 +49,7 @@ One approval doesn't generalize. The user approving a push once doesn't mean all
 - \`sessions/\` — session state for \`/continue\` handoffs
 
 Quick lookups stay in context. Deeper research and all plans go to \`.scratch/\`.
+If \`.scratch/\` isn't gitignored, add it to \`.git/info/exclude\` before writing there.
 Check for existing files before re-researching. Graduate useful bits to \`docs/\` or \`llm-context/\` when ready.
 
 ## Style
@@ -70,38 +72,7 @@ export default function (pi: ExtensionAPI) {
 
   // Guard: catch execution intent and remind to discuss/plan first
   pi.on("input", (event) => {
-    const text = event.text?.toLowerCase() ?? "";
-
-    // Skip questions — they're discussion, not execution
-    if (text.includes("?")) return { action: "continue" as const };
-    const questionStarts = /^\s*(how|what|why|can|could|would|should|is|does|do|where|when|which)\b/;
-    if (questionStarts.test(text)) return { action: "continue" as const };
-
-    // Explicit go-ahead bypasses the guard
-    const hasBypass =
-      text.includes("just do it") ||
-      text.includes("skip plan") ||
-      text.includes("no plan") ||
-      text.includes("go ahead") ||
-      text.includes("implement it") ||
-      text.includes("do it");
-    if (hasBypass) return { action: "continue" as const };
-
-    // Only check the first ~50 chars for execution keywords (imperative commands front-load the verb)
-    const head = text.slice(0, 50);
-    const executeKeywords = [
-      "implement",
-      "build",
-      "write the code",
-      "code this",
-      "wire up",
-      "hook up",
-      "refactor",
-      "migrate",
-    ];
-    const hasExecuteIntent = executeKeywords.some((k) => head.includes(k));
-
-    if (hasExecuteIntent) {
+    if (hasExecuteIntent(event.text ?? "")) {
       return {
         action: "transform" as const,
         text:
@@ -111,4 +82,50 @@ export default function (pi: ExtensionAPI) {
     }
     return { action: "continue" as const };
   });
+}
+
+export function hasExecuteIntent(rawText: string): boolean {
+  const text = rawText.toLowerCase();
+
+  // Skip slash commands — skill invocations carry their own workflow
+  if (text.trimStart().startsWith("/")) return false;
+
+  // Skip questions — they're discussion, not execution
+  if (text.includes("?")) return false;
+  const questionStarts = /^\s*(how|what|why|can|could|would|should|is|does|do|where|when|which)\b/;
+  if (questionStarts.test(text)) return false;
+
+  // Explicit go-ahead bypasses the guard. Word-boundary matches, and a phrase
+  // doesn't count when negated or merely described ("don't do it", "there's no plan yet").
+  const bypassPhrases = [
+    /\bjust do it\b/,
+    /\bskip (the )?plan\b/,
+    /\bno plan\b/,
+    /\bgo ahead\b/,
+    /\bimplement it\b/,
+    /\bdo it\b/,
+  ];
+  const excludedBefore = /\b(don'?t|do not|won'?t|will not|never|not|there'?s|there (is|was)|have|has|is)(\s+\w+){0,2}\s*$/;
+  const hasBypass = bypassPhrases.some((re) => {
+    const m = re.exec(text);
+    return m !== null && !excludedBefore.test(text.slice(0, m.index));
+  });
+  if (hasBypass) return false;
+
+  // Only check the first ~50 chars for execution keywords (imperative commands front-load the verb)
+  const head = text.slice(0, 50);
+  const executeKeywords = [
+    "implement",
+    "build a",
+    "build an",
+    "build the",
+    "build out",
+    "write the code",
+    "code this",
+    "wire up",
+    "hook up",
+    "refactor",
+    "migrate",
+  ];
+  return executeKeywords.some((k) => head.includes(k));
 }
