@@ -270,7 +270,7 @@ async function promptPermissionScope(
 
 			render(width: number): string[] {
 				const lines = [
-					theme.fg("accent", theme.bold(title)),
+					theme.fg("accent", theme.bold(truncateToWidth(title, width))),
 					"",
 				];
 				for (let i = 0; i < items.length; i++) {
@@ -279,7 +279,7 @@ async function promptPermissionScope(
 					const rendered = truncateToWidth(line, width);
 					lines.push(i === this.selected ? theme.fg("accent", rendered) : rendered);
 				}
-				lines.push("", theme.fg("dim", "1-9 select • ↑↓/j/k navigate • enter select • esc cancel"));
+				lines.push("", theme.fg("dim", truncateToWidth("1-9 select • ↑↓/j/k navigate • enter select • esc cancel", width)));
 				return lines;
 			}
 
