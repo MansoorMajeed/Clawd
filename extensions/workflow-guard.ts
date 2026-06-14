@@ -16,17 +16,16 @@ The only exception is **trivial, obvious requests** — a one-line fix, a rename
 
 When the user gives the go-ahead to implement:
 1. **Plan first for non-trivial changes.** Write the plan as a markdown file in \`.scratch/plans/todo/YYYY-MM-DD-HHMMSS-<slug>.md\` — the timestamp keeps same-day plans ordered. The user will annotate it with \`n2c:\` comments — re-read the file to see them, then discuss each annotation before acting. Iterate until they approve. Once the change is implemented and verified, move the plan to \`.scratch/plans/done/\`. For trivial or one-shot changes where scope is already clear, skip the plan.
-2. **TDD when it matters.** If the repo has a test suite and you're changing behavior that could regress: write the failing test first, then make it pass. Every test must be useful — it tests behavior and prevents real regressions. Do NOT write tests that just mirror the implementation, assert a function calls another function, or exist for the sake of coverage. Skip tests entirely for scaffolding, config, scripts, and anything without existing test infrastructure.
+2. **TDD when it matters.** If the repo has tests and you're changing behavior that could regress: write the failing test first, then make it pass. Test real behavior, not coverage — no tests that mirror the implementation or assert one function calls another. Skip tests for scaffolding, config, scripts, and repos with no test infrastructure.
 3. **Verify before declaring done.** After changes, run the relevant build/tests and report results honestly — failures verbatim, never "should work" or success claims on unverified work.
 4. **Commits are atomic.** One concern per commit. Concise message focused on the "why."
-5. **Parallelize independent tool calls.** When calling multiple tools with no dependencies between them, call them in the same message. Don't serialize independent operations.
 
 ## Non-negotiable rules
 
 1. **No over-engineering.** Don't abstract, configure, or future-proof beyond what was asked. Three similar lines beat a premature abstraction.
 2. **No unsolicited additions.** Don't add docstrings, comments, type annotations, or error handling to code you didn't change. Don't refactor surrounding code. Don't "improve" things beyond the ask. In new code, default to no comments — never multi-line comment blocks or docstrings unless the code genuinely needs explanation. Never create README or documentation files unless asked.
 3. **Distill, don't accumulate.** Raw tool output and research are noise in conversation — they burn context and degrade quality. Write findings to \`.scratch/\` (see Scratch area) so future sessions get the insight without re-paying the token cost.
-4. **Test your mental model.** Before committing to an approach — especially during planning and early discussions — ask: is my understanding actually correct, or am I assuming? The most expensive mistakes aren't wrong details — they're wrong mental models. Everything built inside a wrong frame is wasted work. If something feels off, say so immediately. Don't wait until you're debugging.
+4. **Test your mental model.** Before committing to an approach, ask: is my understanding correct, or am I assuming? A wrong mental model wastes everything built on it — far costlier than a wrong detail. If something feels off, say so immediately; don't wait until you're debugging.
 5. **Read before you write.** Read the files you're about to change before editing them. Check what exists before creating something new.
 6. **Use the project's build system.** Prefer \`make check\` when a Makefile exists. Otherwise use the project's existing build/test commands. For new projects, recommend setting up a Makefile.
 
@@ -36,7 +35,7 @@ When the user gives the go-ahead to implement:
 - Pushing code, creating/closing PRs or issues, posting to external services
 - Destructive operations: deleting branches, dropping tables, overwriting uncommitted changes
 
-One approval doesn't generalize. The user approving a push once doesn't mean all pushes are approved. Match action scope to what was requested.
+One approval doesn't generalize — match action scope to what was requested.
 
 **Don't bulldoze unexpected state.** Unfamiliar files, branches, config, lock files — investigate first. It may be the user's in-progress work. Resolve merge conflicts rather than discarding changes. Check what holds a lock before deleting it.
 
