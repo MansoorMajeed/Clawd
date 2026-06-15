@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -481,14 +481,17 @@ describe("buildPermissionScopeOptions", () => {
 
 	it("puts repo root first for paths inside a git repo", async () => {
 		await withTempDir(async (dir) => {
-			const repo = join(dir, "org", "repo");
-			const src = join(repo, "src");
-			const file = join(src, "foo.ts");
-			await mkdir(join(repo, ".git"), { recursive: true });
-			await mkdir(src, { recursive: true });
-			await writeFile(file, "export {};\n");
+			const rawRepo = join(dir, "org", "repo");
+			const rawSrc = join(rawRepo, "src");
+			const rawFile = join(rawSrc, "foo.ts");
+			await mkdir(join(rawRepo, ".git"), { recursive: true });
+			await mkdir(rawSrc, { recursive: true });
+			await writeFile(rawFile, "export {};\n");
+			const repo = await realpath(rawRepo);
+			const src = await realpath(rawSrc);
+			const file = await realpath(rawFile);
 
-			const options = await buildPermissionScopeOptions(file, dir, "read");
+			const options = await buildPermissionScopeOptions(rawFile, dir, "read");
 
 			expect(options.map((option) => option.kind)).toEqual(["repo", "directory", "exact"]);
 			expect(options.map((option) => option.resolvedPath)).toEqual([repo, src, file]);
@@ -498,12 +501,14 @@ describe("buildPermissionScopeOptions", () => {
 
 	it("omits repo root outside a git repo", async () => {
 		await withTempDir(async (dir) => {
-			const folder = join(dir, "notes");
-			const file = join(folder, "api.md");
-			await mkdir(folder, { recursive: true });
-			await writeFile(file, "# API\n");
+			const rawFolder = join(dir, "notes");
+			const rawFile = join(rawFolder, "api.md");
+			await mkdir(rawFolder, { recursive: true });
+			await writeFile(rawFile, "# API\n");
+			const folder = await realpath(rawFolder);
+			const file = await realpath(rawFile);
 
-			const options = await buildPermissionScopeOptions(file, dir, "read");
+			const options = await buildPermissionScopeOptions(rawFile, dir, "read");
 
 			expect(options.map((option) => option.kind)).toEqual(["directory", "exact"]);
 			expect(options.map((option) => option.resolvedPath)).toEqual([folder, file]);
@@ -512,11 +517,13 @@ describe("buildPermissionScopeOptions", () => {
 
 	it("detects repo root from nearest existing parent for missing leaf paths", async () => {
 		await withTempDir(async (dir) => {
-			const repo = join(dir, "repo");
+			const rawRepo = join(dir, "repo");
+			const rawMissingFile = join(rawRepo, "new", "foo.ts");
+			await mkdir(join(rawRepo, ".git"), { recursive: true });
+			const repo = await realpath(rawRepo);
 			const missingFile = join(repo, "new", "foo.ts");
-			await mkdir(join(repo, ".git"), { recursive: true });
 
-			const options = await buildPermissionScopeOptions(missingFile, dir, "write");
+			const options = await buildPermissionScopeOptions(rawMissingFile, dir, "write");
 
 			expect(options.map((option) => option.kind)).toEqual(["repo", "directory", "exact"]);
 			expect(options.map((option) => option.resolvedPath)).toEqual([
@@ -529,13 +536,41 @@ describe("buildPermissionScopeOptions", () => {
 
 	it("deduplicates directory and exact options for directory paths", async () => {
 		await withTempDir(async (dir) => {
-			const folder = join(dir, "notes");
-			await mkdir(folder, { recursive: true });
+			const rawFolder = join(dir, "notes");
+			await mkdir(rawFolder, { recursive: true });
+			const folder = await realpath(rawFolder);
 
-			const options = await buildPermissionScopeOptions(folder, dir, "read");
+			const options = await buildPermissionScopeOptions(rawFolder, dir, "read");
 
 			expect(options.map((option) => option.kind)).toEqual(["directory"]);
 			expect(options.map((option) => option.resolvedPath)).toEqual([folder]);
+		});
+	});
+
+	it("canonicalizes missing paths under symlinked parents", async () => {
+		await withTempDir(async (dir) => {
+			const realRoot = join(dir, "real-root");
+			const linkRoot = join(dir, "link-root");
+			const rawRepo = join(realRoot, "repo");
+			await mkdir(join(rawRepo, ".git"), { recursive: true });
+			try {
+				await symlink(realRoot, linkRoot);
+			} catch {
+				return;
+			}
+
+			const requested = join(linkRoot, "repo", "new", "foo.ts");
+			const repo = await realpath(join(linkRoot, "repo"));
+			const missingFile = join(repo, "new", "foo.ts");
+
+			const options = await buildPermissionScopeOptions(requested, dir, "write");
+
+			expect(options.map((option) => option.kind)).toEqual(["repo", "directory", "exact"]);
+			expect(options.map((option) => option.resolvedPath)).toEqual([
+				repo,
+				join(repo, "new"),
+				missingFile,
+			]);
 		});
 	});
 

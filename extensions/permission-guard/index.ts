@@ -9,7 +9,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth, type Component } from "@earendil-works/pi-tui";
 import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, parse, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, parse, relative, resolve } from "node:path";
 import {
 	checkHardBlock,
 	checkBroadGitAdd,
@@ -85,10 +85,68 @@ function expandTilde(p: string): string {
 async function resolvePath(p: string, cwd: string): Promise<string> {
 	const expanded = expandTilde(p);
 	const absolute = resolve(cwd, expanded);
-	try {
-		return await realpath(absolute);
-	} catch {
-		return absolute;
+	const missingParts: string[] = [];
+	let current = absolute;
+
+	while (true) {
+		try {
+			const resolved = await realpath(current);
+			return missingParts.length === 0 ? resolved : resolve(resolved, ...missingParts.reverse());
+		} catch {
+			const parent = dirname(current);
+			if (parent === current) return absolute;
+			missingParts.push(basename(current));
+			current = parent;
+		}
+	}
+}
+
+async function nearestExistingDir(rawPath: string, cwd: string): Promise<string> {
+	let current = resolve(cwd, expandTilde(rawPath));
+	while (true) {
+		try {
+			const info = await stat(current);
+			return await resolvePath(info.isDirectory() ? current : dirname(current), cwd);
+		} catch {
+			const parent = dirname(current);
+			if (parent === current) return await resolvePath(current, cwd);
+			current = parent;
+		}
+	}
+}
+
+async function canonicalPath(path: string): Promise<string> {
+	return await resolvePath(path, "/");
+}
+
+async function isDangerouslyBroadPath(path: string): Promise<boolean> {
+	const resolvedPath = await canonicalPath(path);
+	const root = parse(resolvedPath).root;
+	if (resolvedPath === root) return true;
+
+	const home = process.env.HOME;
+	if (!home) return false;
+
+	return resolvedPath === await canonicalPath(home);
+}
+
+export async function isPermissionScopeAllowedForPath(scopePath: string, targetPath: string): Promise<boolean> {
+	const resolvedScope = await canonicalPath(scopePath);
+	const resolvedTarget = await canonicalPath(targetPath);
+	return !(await isDangerouslyBroadPath(resolvedScope)) && isAncestorOrSame(resolvedScope, resolvedTarget);
+}
+
+async function findGitRoot(startDir: string): Promise<string | null> {
+	let current = startDir;
+	while (true) {
+		try {
+			await stat(resolve(current, ".git"));
+			return await resolvePath(current, "/");
+		} catch {
+			const parent = dirname(current);
+			if (parent === current) return null;
+			current = parent;
+		}
 	}
 }
 
@@ -117,54 +175,6 @@ export function readOnlyCoverage(
 function isAncestorOrSame(parent: string, child: string): boolean {
 	const rel = relative(parent, child);
 	return rel === "" || (!!rel && !rel.startsWith("..") && !isAbsolute(rel));
-}
-
-async function isDangerouslyBroadPath(path: string): Promise<boolean> {
-	const root = parse(path).root;
-	if (path === root) return true;
-
-	const home = process.env.HOME;
-	if (!home) return false;
-
-	const resolvedHome = resolve(home);
-	if (path === resolvedHome) return true;
-	try {
-		return path === await realpath(resolvedHome);
-	} catch {
-		return false;
-	}
-}
-
-export async function isPermissionScopeAllowedForPath(scopePath: string, targetPath: string): Promise<boolean> {
-	return !(await isDangerouslyBroadPath(scopePath)) && isAncestorOrSame(scopePath, targetPath);
-}
-
-async function nearestExistingDir(rawPath: string, cwd: string): Promise<string> {
-	let current = resolve(cwd, expandTilde(rawPath));
-	while (true) {
-		try {
-			const info = await stat(current);
-			return info.isDirectory() ? current : dirname(current);
-		} catch {
-			const parent = dirname(current);
-			if (parent === current) return current;
-			current = parent;
-		}
-	}
-}
-
-async function findGitRoot(startDir: string): Promise<string | null> {
-	let current = startDir;
-	while (true) {
-		try {
-			await stat(resolve(current, ".git"));
-			return current;
-		} catch {
-			const parent = dirname(current);
-			if (parent === current) return null;
-			current = parent;
-		}
-	}
 }
 
 export async function buildPermissionScopeOptions(
