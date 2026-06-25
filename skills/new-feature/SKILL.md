@@ -23,7 +23,7 @@ If the feature name has spaces, convert to kebab-case.
 
 ## Step 3: Scoped Plan
 
-Write a focused plan to `.scratch/plans/YYYY-MM-DD-feat-<feature-name>.md`:
+Write a focused plan to `.scratch/plans/todo/YYYY-MM-DD-HHMMSS-feat-<feature-name>.md`:
 
 ```markdown
 # Feature: <feature-name>
@@ -33,12 +33,13 @@ Write a focused plan to `.scratch/plans/YYYY-MM-DD-feat-<feature-name>.md`:
 
 ## Tasks
 
-### Task 1: [Description]
-**Files:** [exact paths]
-**Steps:**
-- [ ] What to do
-- [ ] Test expectations
-- [ ] Verification: `make check`
+Phase checklists: one `- [ ]` per phase, ticked `- [x]` when done and verified.
+
+- [ ] **Phase 1: [description]**
+  - Files: [exact paths]
+  - Steps: [what to do, with test expectations]
+  - Verification: `make check`
+- [ ] **Phase 2: ...**
 ```
 
 **This is NOT a full architecture discussion.** Keep it focused:
@@ -58,10 +59,12 @@ Once approved, build the feature:
 - Run `make check` after each significant change
 - Commit after each logical piece of work
 - Keep commits small and descriptive
+- Tick each phase `- [x]` as you finish it — the first unchecked box is where to resume after a context reset
 
 ## Step 6: Finish
 
 When the feature is complete:
 - Run `make check` one final time
+- Move the plan to `.scratch/plans/done/`
 - Suggest `/ship` to create a PR
 - Or suggest `/review` first if the user wants a fresh-context review
