@@ -63,7 +63,7 @@ Also update CLAUDE.md with the project name, description, and tech stack.
 
 ## Step 5: MVP Plan
 
-Write the plan to `.scratch/plans/YYYY-MM-DD-mvp.md`. The first task should always be "Configure Makefile and CLAUDE.md" if not done yet.
+Write the plan to `.scratch/plans/todo/YYYY-MM-DD-HHMMSS-mvp.md`. The first phase should always be "Configure Makefile and CLAUDE.md" if not done yet.
 
 ```markdown
 # MVP Implementation Plan
@@ -77,17 +77,17 @@ Write the plan to `.scratch/plans/YYYY-MM-DD-mvp.md`. The first task should alwa
 
 ## Tasks
 
-### Task 1: [Description]
-**Files:** [exact paths]
-**Steps:**
-- [ ] Step description (with test expectations where relevant)
-- [ ] Verification: `make check`
+Phase checklists: one `- [ ]` per phase, ticked `- [x]` when done and verified.
 
-### Task 2: ...
+- [ ] **Phase 1: [description]**
+  - Files: [exact paths]
+  - Steps: [what to do, with test expectations where relevant]
+  - Verification: `make check`
+- [ ] **Phase 2: ...**
 ```
 
-**Task guidelines:**
-- Each task should be completable in a few minutes
+**Phase guidelines:**
+- Each phase should be a small, logically complete chunk
 - Include test expectations inline — what to test, not a separate "add tests" phase
 - Include verification steps (`make check`)
 - Be specific: exact file paths, exact function names, exact behavior
@@ -108,3 +108,5 @@ Then iterate:
 Once approved, ask the user:
 - Execute in this session?
 - Or start a fresh context? (Recommended if this session is heavy from discussion)
+
+When executing, tick each phase `- [x]` as you finish it (first unchecked = resume point); move the plan to `.scratch/plans/done/` when all phases are ticked.
