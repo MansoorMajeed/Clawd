@@ -24,7 +24,7 @@ Key questions to discuss:
 
 ## Step 3: Write the Plan
 
-Write to `.scratch/plans/YYYY-MM-DD-<topic>.md`:
+Write to the plans `todo/` directory — `.scratch/plans/todo/YYYY-MM-DD-HHMMSS-<slug>.md`:
 
 ```markdown
 # [Topic] Plan
@@ -38,19 +38,22 @@ Write to `.scratch/plans/YYYY-MM-DD-<topic>.md`:
 
 ## Tasks
 
-### Task 1: [Description]
-**Files:** [exact paths]
-**Steps:**
-- [ ] Step description
-- [ ] Test expectations
-- [ ] Verification: `make check`
+Plans are phase checklists: one `- [ ]` per phase, ticked `- [x]` when the phase is done and verified.
+
+- [ ] **Phase 1: [description]**
+  - Files: [exact paths]
+  - Steps: [what to do — prose or sub-bullets, not separate checkboxes]
+  - Verification: `make check`
+- [ ] **Phase 2: [description]**
+  - ...
 ```
 
 **Guidelines:**
-- Each task: a few minutes of work, specific files, verification step
+- Each phase: a logical chunk with specific files and a verification step
+- Keep boxes phase-level (coarse-grained progress), not per-micro-step
 - Include test expectations inline
 - If the change touches more than ~5 files, consider splitting into multiple plans
-- If it requires architecture changes, include the `architecture.md` update as a task
+- If it requires architecture changes, include the `architecture.md` update as a phase
 
 ## Step 4: Annotation Loop
 
@@ -63,4 +66,4 @@ Do not skip the discussion step. The annotation loop is a conversation, not a ru
 
 ## Step 5: Execute
 
-Once approved, proceed with execution. Write tests alongside code, run `make check` frequently, commit after each logical change.
+Once approved, proceed with execution. Write tests alongside code, run `make check` frequently, commit after each logical change. Tick each phase `- [x]` as you complete and verify it — the first unchecked box is where to resume after a context reset. Move the plan to `.scratch/plans/done/` when all phases are ticked.
