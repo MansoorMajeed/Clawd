@@ -14,7 +14,18 @@ import { Container, Key, Text, matchesKey, type Component, type TUI } from "@ear
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	buildScaledBreakdown,
+	type ContextCategory,
+	estimateMessagesTokens,
+	estimateTokens,
+	parseScaleCache,
+	serializeScaleCache,
+	skillBreakdown,
+	sliceSystemPrompt,
+	sumToolTokens,
+} from "./context-pure";
 
 function formatUsd(cost: number): string {
 	if (!Number.isFinite(cost) || cost <= 0) return "$0.00";
@@ -23,9 +34,29 @@ function formatUsd(cost: number): string {
 	return `$${cost.toFixed(4)}`;
 }
 
-function estimateTokens(text: string): number {
-	// Deliberately fuzzy (good enough for “how big-ish is this”).
-	return Math.max(0, Math.ceil(text.length / 4));
+const SCALE_CACHE_PATH = path.join(os.homedir(), ".pi", "agent", "context-scale-cache.json");
+
+function readScaleCacheFile(): Record<string, number> {
+	try {
+		return parseScaleCache(readFileSync(SCALE_CACHE_PATH, "utf8"));
+	} catch {
+		return {};
+	}
+}
+
+function writeScaleCacheFile(cache: Record<string, number>): void {
+	try {
+		writeFileSync(SCALE_CACHE_PATH, serializeScaleCache(cache));
+	} catch {
+		// best-effort; the cache is an optimization, not correctness-critical
+	}
+}
+
+/** Short label describing how the total was derived (char/4 proportions scaled to the real total). */
+function scaleLabel(scaleSource: "usage" | "cache" | "raw", scale: number): string {
+	if (scaleSource === "usage") return `calibrated ×${scale.toFixed(2)}`;
+	if (scaleSource === "cache") return `est. ×${scale.toFixed(2)} (last turn)`;
+	return "≈ raw char/4 — calibrates after first reply";
 }
 
 function normalizeReadPath(inputPath: string, cwd: string): string {
@@ -214,63 +245,43 @@ function shortenPath(p: string, cwd: string): string {
 	return rp;
 }
 
-function renderUsageBar(
-	theme: any,
-	parts: { system: number; tools: number; convo: number; remaining: number },
-	total: number,
-	width: number,
-): string {
-	const w = Math.max(10, width);
-	if (total <= 0) return "";
-
-	const toCols = (n: number) => Math.round((n / total) * w);
-	let sys = toCols(parts.system);
-	let tools = toCols(parts.tools);
-	let con = toCols(parts.convo);
-	let rem = w - sys - tools - con;
-	if (rem < 0) rem = 0;
-	// adjust rounding drift
-	while (sys + tools + con + rem < w) rem++;
-	while (sys + tools + con + rem > w && rem > 0) rem--;
-
-	const block = "█";
-	const sysStr = theme.fg("accent", block.repeat(sys));
-	const toolsStr = theme.fg("warning", block.repeat(tools));
-	const conStr = theme.fg("success", block.repeat(con));
-	const remStr = theme.fg("dim", block.repeat(rem));
-	return `${sysStr}${toolsStr}${conStr}${remStr}`;
-}
-
 function joinComma(items: string[]): string {
 	return items.join(", ");
 }
 
-function joinCommaStyled(items: string[], renderItem: (item: string) => string, sep: string): string {
-	return items.map(renderItem).join(sep);
+function padRight(s: string, w: number): string {
+	return s.length >= w ? s : s + " ".repeat(w - s.length);
 }
 
+function padLeft(s: string, w: number): string {
+	return s.length >= w ? s : " ".repeat(w - s.length) + s;
+}
+
+/** Compact token count: ~13.0k / ~239. */
+function fmtTok(n: number): string {
+	return n >= 1000 ? `~${(n / 1000).toFixed(1)}k` : `~${n}`;
+}
+
+type TokenRow = { name: string; tokens: number };
+
 type ContextViewData = {
-	usage:
-		| {
-			// message-based context usage estimate from ctx.getContextUsage()
-			messageTokens: number;
-			contextWindow: number;
-			// effective usage incl. a rough tool-definition estimate
-			effectiveTokens: number;
-			percent: number;
-			remainingTokens: number;
-			systemPromptTokens: number;
-			agentTokens: number;
-			toolsTokens: number;
-			activeTools: number;
-		}
-		| null;
-	agentFiles: string[];
+	header: {
+		effective: number;
+		contextWindow: number;
+		percent: number;
+		free: number;
+		label: string;
+	} | null;
+	categories: ContextCategory[];
+	tools: { total: number; perTool: TokenRow[] };
+	skills: { total: number; perSkill: TokenRow[] };
+	memoryFiles: string[];
 	extensions: string[];
-	skills: string[];
 	loadedSkills: string[];
 	session: { totalTokens: number; totalCost: number };
 };
+
+const SKILL_TABLE_CAP = 25;
 
 class ContextView implements Component {
 	private tui: TUI;
@@ -309,84 +320,61 @@ class ContextView implements Component {
 		const muted = (s: string) => this.theme.fg("muted", s);
 		const dim = (s: string) => this.theme.fg("dim", s);
 		const text = (s: string) => this.theme.fg("text", s);
+		const accent = (s: string) => this.theme.fg("accent", s);
+		const heading = (s: string) => this.theme.fg("accent", this.theme.bold(s));
 
 		const lines: string[] = [];
 
-		// Window + bar
-		if (!this.data.usage) {
+		// Header: effective / window usage
+		const h = this.data.header;
+		if (!h) {
 			lines.push(muted("Window: ") + dim("(unknown)"));
 		} else {
-			const u = this.data.usage;
 			lines.push(
-				muted("Window: ") +
-					text(`~${u.effectiveTokens.toLocaleString()} / ${u.contextWindow.toLocaleString()}`) +
-					muted(`  (${u.percent.toFixed(1)}% used, ~${u.remainingTokens.toLocaleString()} left)`),
+				text(`~${h.effective.toLocaleString()} / ${h.contextWindow.toLocaleString()} tokens`) +
+					muted(`  (${h.percent.toFixed(1)}% used, ~${h.free.toLocaleString()} free)`),
 			);
-
-			// bar width tries to fit within the viewport
-			const barWidth = Math.max(10, Math.min(36, width - 10));
-
-			// Prorate system prompt into current message context estimate, then add tools estimate.
-			const sysInMessages = Math.min(u.systemPromptTokens, u.messageTokens);
-			const convoInMessages = Math.max(0, u.messageTokens - sysInMessages);
-			const bar =
-				renderUsageBar(
-					this.theme,
-					{
-						system: sysInMessages,
-						tools: u.toolsTokens,
-						convo: convoInMessages,
-						remaining: u.remainingTokens,
-					},
-					u.contextWindow,
-					barWidth,
-				) +
-				" " +
-				dim("sys") +
-				this.theme.fg("accent", "█") +
-				" " +
-				dim("tools") +
-				this.theme.fg("warning", "█") +
-				" " +
-				dim("convo") +
-				this.theme.fg("success", "█") +
-				" " +
-				dim("free") +
-				this.theme.fg("dim", "█");
-			lines.push(bar);
+			lines.push(dim(`  ${h.label}`));
 		}
 
+		// Categories table (sorted desc; Free space last)
 		lines.push("");
-
-		// System prompt + tools totals (approx)
-		if (this.data.usage) {
-			const u = this.data.usage;
-			lines.push(
-				muted("System: ") +
-					text(`~${u.systemPromptTokens.toLocaleString()} tok`) +
-					muted(` (AGENTS ~${u.agentTokens.toLocaleString()})`),
-			);
-			lines.push(
-				muted("Tools: ") +
-					text(`~${u.toolsTokens.toLocaleString()} tok`) +
-					muted(` (${u.activeTools} active)`),
-			);
+		lines.push(heading("By category"));
+		const catLabelW = Math.max(...this.data.categories.map((c) => c.label.length), 8);
+		const catTokW = Math.max(...this.data.categories.map((c) => fmtTok(c.tokens).length), 5);
+		for (const c of this.data.categories) {
+			const isFree = c.label === "Free space";
+			const label = isFree ? dim(padRight(c.label, catLabelW)) : text(padRight(c.label, catLabelW));
+			const tok = isFree ? dim(padLeft(fmtTok(c.tokens), catTokW)) : accent(padLeft(fmtTok(c.tokens), catTokW));
+			lines.push(`  ${label}  ${tok}  ${dim(padLeft(`${c.pct.toFixed(1)}%`, 6))}`);
 		}
 
-		lines.push(muted(`AGENTS (${this.data.agentFiles.length}): `) + text(this.data.agentFiles.length ? joinComma(this.data.agentFiles) : "(none)"));
+		// Tools table (all active, sorted desc)
 		lines.push("");
-		lines.push(muted(`Extensions (${this.data.extensions.length}): `) + text(this.data.extensions.length ? joinComma(this.data.extensions) : "(none)"));
+		lines.push(heading(`Tools (${this.data.tools.perTool.length} active, ${fmtTok(this.data.tools.total)})`));
+		lines.push(...this.renderTokenRows(this.data.tools.perTool, this.data.tools.total, undefined));
 
+		// Skills table (sorted desc, capped)
+		const skills = this.data.skills.perSkill;
+		lines.push("");
+		lines.push(heading(`Skills (${skills.length}, ${fmtTok(this.data.skills.total)})`));
+		const shown = skills.slice(0, SKILL_TABLE_CAP);
 		const loaded = new Set(this.data.loadedSkills);
-		const skillsRendered = this.data.skills.length
-			? joinCommaStyled(
-					this.data.skills,
-					(name) => (loaded.has(name) ? this.theme.fg("success", name) : this.theme.fg("muted", name)),
-					this.theme.fg("muted", ", "),
-				)
-			: "(none)";
-		lines.push(muted(`Skills (${this.data.skills.length}): `) + skillsRendered);
+		lines.push(...this.renderTokenRows(shown, undefined, loaded));
+		if (skills.length > shown.length) {
+			const restTok = skills.slice(SKILL_TABLE_CAP).reduce((a, s) => a + s.tokens, 0);
+			lines.push(dim(`  … +${skills.length - shown.length} more (${fmtTok(restTok)})`));
+		}
+
+		// Extensions + session
 		lines.push("");
+		lines.push(
+			muted(`Extensions (${this.data.extensions.length}): `) +
+				text(this.data.extensions.length ? joinComma(this.data.extensions) : "(none)"),
+		);
+		if (this.data.memoryFiles.length) {
+			lines.push(muted(`Memory (${this.data.memoryFiles.length}): `) + text(joinComma(this.data.memoryFiles)));
+		}
 		lines.push(
 			muted("Session: ") +
 				text(`${this.data.session.totalTokens.toLocaleString()} tokens`) +
@@ -396,6 +384,29 @@ class ContextView implements Component {
 
 		this.body.setText(lines.join("\n"));
 		this.cachedWidth = width;
+	}
+
+	/** Aligned `  name   ~tok  pct%` rows. Loaded skills highlighted; pct omitted when total is undefined. */
+	private renderTokenRows(rows: TokenRow[], total: number | undefined, loaded: Set<string> | undefined): string[] {
+		const muted = (s: string) => this.theme.fg("muted", s);
+		const dim = (s: string) => this.theme.fg("dim", s);
+		const text = (s: string) => this.theme.fg("text", s);
+		const accent = (s: string) => this.theme.fg("accent", s);
+		const success = (s: string) => this.theme.fg("success", s);
+		if (rows.length === 0) return [muted("  (none)")];
+		const nameW = Math.min(34, Math.max(...rows.map((r) => r.name.length), 4));
+		const tokW = Math.max(...rows.map((r) => fmtTok(r.tokens).length), 5);
+		return rows.map((r) => {
+			const name = r.name.length > nameW ? r.name.slice(0, nameW - 1) + "…" : r.name;
+			const isLoaded = loaded?.has(r.name);
+			const nameStr = (isLoaded ? success : text)(padRight(name, nameW));
+			const tokStr = accent(padLeft(fmtTok(r.tokens), tokW));
+			if (total && total > 0) {
+				const pct = `${((r.tokens / total) * 100).toFixed(1)}%`;
+				return `  ${nameStr}  ${tokStr}  ${dim(padLeft(pct, 6))}`;
+			}
+			return `  ${nameStr}  ${tokStr}`;
+		});
 	}
 
 	handleInput(data: string): void {
@@ -475,7 +486,6 @@ export default function contextExtension(pi: ExtensionAPI) {
 		handler: async (_args, ctx: ExtensionCommandContext) => {
 			const commands = pi.getCommands();
 			const extensionCmds = commands.filter((c) => c.source === "extension");
-			const skillCmds = commands.filter((c) => c.source === "skill");
 
 			const extensionsByPath = new Map<string, string[]>();
 			for (const c of extensionCmds) {
@@ -488,56 +498,93 @@ export default function contextExtension(pi: ExtensionAPI) {
 				.map((p) => (p === "<unknown>" ? p : path.basename(p)))
 				.sort((a, b) => a.localeCompare(b));
 
-			const skills = skillCmds
-				.map((c) => normalizeSkillName(c.name))
-				.sort((a, b) => a.localeCompare(b));
-
 			const agentFiles = await loadProjectContextFiles(ctx.cwd);
-			const agentFilePaths = agentFiles.map((f) => shortenPath(f.path, ctx.cwd));
-			const agentTokens = agentFiles.reduce((a, f) => a + f.tokens, 0);
+			const memoryFiles = agentFiles.map((f) => shortenPath(f.path, ctx.cwd));
 
-			const systemPrompt = ctx.getSystemPrompt();
-			const systemPromptTokens = systemPrompt ? estimateTokens(systemPrompt) : 0;
+			// Slice the assembled system prompt into system / memory / skills regions, then
+			// reconcile every category against the context window. Tools are computed from real
+			// per-tool JSON schemas and sit on top of getContextUsage() (which excludes them).
+			const systemPrompt = ctx.getSystemPrompt() ?? "";
+			const regions = sliceSystemPrompt(systemPrompt);
+			const systemTok = estimateTokens(regions.system);
+			const memoryTok = estimateTokens(regions.memory);
+			const skillsTok = estimateTokens(regions.skills);
 
 			const usage = ctx.getContextUsage();
-			const messageTokens = usage?.tokens ?? 0;
+			const realTotal = usage?.tokens ?? null; // null when unknown (fresh / post-compaction)
 			const ctxWindow = usage?.contextWindow ?? 0;
 
-			// Tool definitions are not part of ctx.getContextUsage() (it estimates message tokens).
-			// We approximate their token impact from tool name + description, and apply a fudge
-			// factor to account for parameters/schema/formatting.
-			const TOOL_FUDGE = 1.5;
 			const activeToolNames = pi.getActiveTools();
-			const toolInfoByName = new Map(pi.getAllTools().map((t) => [t.name, t] as const));
-			let toolsTokens = 0;
-			for (const name of activeToolNames) {
-				const info = toolInfoByName.get(name);
-				const blob = `${name}\n${info?.description ?? ""}`;
-				toolsTokens += estimateTokens(blob);
-			}
-			toolsTokens = Math.round(toolsTokens * TOOL_FUDGE);
+			const toolAgg = sumToolTokens(pi.getAllTools(), activeToolNames);
+			const skillAgg = skillBreakdown(regions.skills);
+			const messagesTok = estimateMessagesTokens(ctx.sessionManager.getEntries() as any[]);
 
-			const effectiveTokens = messageTokens + toolsTokens;
-			const percent = ctxWindow > 0 ? (effectiveTokens / ctxWindow) * 100 : 0;
-			const remainingTokens = ctxWindow > 0 ? Math.max(0, ctxWindow - effectiveTokens) : 0;
+			// Provider gives an exact total but no category split; char/4 gives the proportions.
+			// Scale the char/4 categories to the real total so slices sum to it (model-agnostic).
+			// Fresh sessions (no usage) reuse this model's last cached scale.
+			const modelId = ctx.model?.id ?? "";
+			const scaleCache = readScaleCacheFile();
+			const cachedScale = modelId ? (scaleCache[modelId] ?? null) : null;
+
+			const breakdown = buildScaledBreakdown({
+				systemTok,
+				memoryTok,
+				skillsTok,
+				toolsTok: toolAgg.total,
+				messagesTok,
+				realTotal,
+				cachedScale,
+				contextWindow: ctxWindow,
+			});
+
+			// Persist the freshly observed scale for this model (stable ~1.55 on Anthropic, ~1.05 on OpenAI).
+			if (modelId && breakdown.scaleSource === "usage" && Number.isFinite(breakdown.scale) && breakdown.scale > 0) {
+				scaleCache[modelId] = Number(breakdown.scale.toFixed(4));
+				writeScaleCacheFile(scaleCache);
+			}
+
+			const headerTotal = breakdown.scaleSource === "usage" && realTotal ? realTotal : breakdown.effective;
+			const headerFree = ctxWindow > 0 ? Math.max(0, ctxWindow - headerTotal) : 0;
+			const percent = ctxWindow > 0 ? (headerTotal / ctxWindow) * 100 : 0;
+			const totalLabel = scaleLabel(breakdown.scaleSource, breakdown.scale);
 
 			const sessionUsage = sumSessionUsage(ctx);
+			const loadedSkills = Array.from(getLoadedSkillsFromSession(ctx)).sort((a, b) => a.localeCompare(b));
 
 			const makePlainText = () => {
 				const lines: string[] = [];
-				lines.push("Context");
-				if (usage) {
+				if (ctxWindow > 0) {
 					lines.push(
-						`Window: ~${effectiveTokens.toLocaleString()} / ${ctxWindow.toLocaleString()} (${percent.toFixed(1)}% used, ~${remainingTokens.toLocaleString()} left)`,
+						`Context  ~${headerTotal.toLocaleString()} / ${ctxWindow.toLocaleString()} tokens (${percent.toFixed(1)}% used, ~${headerFree.toLocaleString()} free)  [${totalLabel}]`,
 					);
 				} else {
-					lines.push("Window: (unknown)");
+					lines.push("Context  (window unknown)");
 				}
-				lines.push(`System: ~${systemPromptTokens.toLocaleString()} tok (AGENTS ~${agentTokens.toLocaleString()})`);
-				lines.push(`Tools: ~${toolsTokens.toLocaleString()} tok (${activeToolNames.length} active)`);
-				lines.push(`AGENTS: ${agentFilePaths.length ? joinComma(agentFilePaths) : "(none)"}`);
+
+				lines.push("");
+				lines.push("By category:");
+				for (const c of breakdown.categories) {
+					lines.push(`  ${padRight(c.label, 14)}  ${padLeft(fmtTok(c.tokens), 8)}  ${padLeft(`${c.pct.toFixed(1)}%`, 6)}`);
+				}
+
+				lines.push("");
+				lines.push(`Tools (${toolAgg.perTool.length} active, ${fmtTok(toolAgg.total)}):`);
+				const toolNameW = Math.min(34, Math.max(...toolAgg.perTool.map((t) => t.name.length), 4));
+				for (const t of toolAgg.perTool) {
+					const pct = toolAgg.total > 0 ? `${((t.tokens / toolAgg.total) * 100).toFixed(1)}%` : "";
+					lines.push(`  ${padRight(t.name, toolNameW)}  ${padLeft(fmtTok(t.tokens), 8)}  ${padLeft(pct, 6)}`);
+				}
+
+				lines.push("");
+				lines.push(`Skills (${skillAgg.perSkill.length}, ${fmtTok(skillAgg.total)}):`);
+				const skillNameW = Math.min(40, Math.max(...skillAgg.perSkill.map((s) => s.name.length), 4));
+				for (const s of skillAgg.perSkill) {
+					lines.push(`  ${padRight(s.name, skillNameW)}  ${padLeft(fmtTok(s.tokens), 8)}`);
+				}
+
+				lines.push("");
 				lines.push(`Extensions (${extensionFiles.length}): ${extensionFiles.length ? joinComma(extensionFiles) : "(none)"}`);
-				lines.push(`Skills (${skills.length}): ${skills.length ? joinComma(skills) : "(none)"}`);
+				if (memoryFiles.length) lines.push(`Memory (${memoryFiles.length}): ${joinComma(memoryFiles)}`);
 				lines.push(`Session: ${sessionUsage.totalTokens.toLocaleString()} tokens · ${formatUsd(sessionUsage.totalCost)}`);
 				return lines.join("\n");
 			};
@@ -547,25 +594,15 @@ export default function contextExtension(pi: ExtensionAPI) {
 				return;
 			}
 
-			const loadedSkills = Array.from(getLoadedSkillsFromSession(ctx)).sort((a, b) => a.localeCompare(b));
-
 			const viewData: ContextViewData = {
-				usage: usage
-					? {
-						messageTokens,
-						contextWindow: ctxWindow,
-						effectiveTokens,
-						percent,
-						remainingTokens,
-						systemPromptTokens,
-						agentTokens,
-						toolsTokens,
-						activeTools: activeToolNames.length,
-					}
+				header: ctxWindow > 0
+					? { effective: headerTotal, contextWindow: ctxWindow, percent, free: headerFree, label: totalLabel }
 					: null,
-				agentFiles: agentFilePaths,
+				categories: breakdown.categories,
+				tools: toolAgg,
+				skills: { total: skillAgg.total, perSkill: skillAgg.perSkill },
+				memoryFiles,
 				extensions: extensionFiles,
-				skills,
 				loadedSkills,
 				session: { totalTokens: sessionUsage.totalTokens, totalCost: sessionUsage.totalCost },
 			};
