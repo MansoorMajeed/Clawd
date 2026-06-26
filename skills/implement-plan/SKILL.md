@@ -48,7 +48,7 @@ For each **unchecked** phase, in order:
 - **quick:** after all phases are ticked, run the reviewer **once**.
 - **deep:** after each phase, run the reviewer; loop implement → review → fix until clean before moving on.
 
-Run the reviewer as a fresh-context sub-agent so it doesn't mark its own homework (`review` skill). Default to a headless `subagent`; use `tmux-subagent` when the user wants to watch. Address findings with the `address-review` skill (P1 → P2 → P3, respond to every finding), then re-check.
+Run the reviewer as a fresh-context sub-agent so it doesn't mark its own homework (`review` skill). Use a headless `subagent`. Address findings with the `address-review` skill (P1 → P2 → P3, respond to every finding), then re-check.
 
 ## Step 6: Finish
 

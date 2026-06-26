@@ -13,7 +13,6 @@ Custom Pi coding agent package — lean system prompt, opinionated workflow. Inc
   - `internet-search.ts` — Internet search via DuckDuckGo with isolated LLM extraction to prevent prompt injection
   - `answer.ts` — Extracts questions from last assistant message into interactive Q&A interface (`/answer` or `Ctrl+.`)
   - `todos.ts` — File-based todo manager in `.pi/todos/`. LLM tool for CRUD + claim/release, visual `/todos` browser with fuzzy search
-  - `tmux-subagent/` — Spawns sub-agents as visible interactive Pi sessions in tmux windows. Supports fan-out, steering, peer messaging, live dashboard
   - `multi-edit.ts` — Replaces built-in `edit` tool with batch edits and Codex-style patch support, with preflight validation
   - `review.ts` — Code review command supporting PR/branch/commit/folder modes, with optional fix loop and REVIEW_GUIDELINES.md
   - `context.ts` — TUI context viewer: loaded extensions, skills, token usage, cost, context window utilization

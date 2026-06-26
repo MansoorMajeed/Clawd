@@ -88,7 +88,6 @@ Recommended split:
 - `/parallel-review` — fresh reviewer fanout for review-only passes
 - `/review` — Clawd's manual fresh-context review flow
 - `/address-review` — manual file-based handoff from `.scratch/reviews/`
-- `tmux_subagent` — visible interactive agents when you specifically want terminal sessions
 
 ## MCP support
 
