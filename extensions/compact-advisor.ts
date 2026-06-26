@@ -8,15 +8,23 @@
  * Fires on turn_end (per LLM round-trip) so it triggers mid-run during long
  * autonomous tasks, not just at the end of a user prompt. Native auto-compaction
  * stays enabled as the overflow safety net.
+ *
+ * Resumes after compacting: a proactive compaction ends the in-flight agent loop
+ * with nothing to restart it (pi only auto-retries on genuine overflow recovery,
+ * not on threshold compaction). If the interrupted turn was mid-task (had tool
+ * calls), we nudge the agent to continue so long autonomous runs don't stall.
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 export const TARGET_TOKENS = 200_000;
 export const RESERVE_MARGIN = 32_000;
 
 const COMPACT_INSTRUCTIONS =
 	"Preserve the current task context and any in-progress work. Focus the summary on what's actively being worked on, key decisions made, and what's next.";
+
+const RESUME_PROMPT =
+	"Context was just compacted. Continue the in-progress task from where you left off based on the summary — do not restart from scratch.";
 
 /**
  * Effective compaction threshold for a given context window.
@@ -30,7 +38,20 @@ export function computeCompactThreshold(contextWindow: number): number {
 export default function (pi: ExtensionAPI) {
 	let compacting = false;
 
-	pi.on("turn_end", async (_event, ctx) => {
+	function resumeIfInterrupted(midTask: boolean, ctx: ExtensionContext): void {
+		if (!midTask) return;
+		// If something is already streaming or queued (e.g. loop.ts re-triggered on
+		// agent_end), don't double-fire — whoever queued first wins.
+		if (!ctx.isIdle() || ctx.hasPendingMessages()) return;
+
+		pi.sendMessage(
+			{ customType: "resume", content: RESUME_PROMPT, display: false },
+			{ deliverAs: "followUp", triggerTurn: true },
+		);
+		if (ctx.hasUI) ctx.ui.notify("Resumed after compaction", "info");
+	}
+
+	pi.on("turn_end", async (event, ctx) => {
 		if (compacting) return;
 
 		const usage = ctx.getContextUsage();
@@ -38,11 +59,17 @@ export default function (pi: ExtensionAPI) {
 
 		if (usage.tokens < computeCompactThreshold(usage.contextWindow)) return;
 
+		// The turn made tool calls => the agent intended to keep working, so the
+		// compaction is interrupting a mid-task run and we should resume it. A
+		// text-only turn means the agent was finishing; let it go idle.
+		const midTask = event.toolResults.length > 0;
+
 		compacting = true;
 		ctx.compact({
 			customInstructions: COMPACT_INSTRUCTIONS,
 			onComplete: () => {
 				compacting = false;
+				resumeIfInterrupted(midTask, ctx);
 			},
 			onError: () => {
 				compacting = false;

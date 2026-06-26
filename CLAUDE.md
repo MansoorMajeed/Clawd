@@ -26,7 +26,7 @@ Custom Pi coding agent package — lean system prompt, opinionated workflow. Inc
   - `prompt-editor.ts` — In-editor prompt selector with persistence, history, thinking level toggle
   - `clear.ts` — `/clear` command to reset conversation to blank slate (preserves session file)
   - `read-before-edit.ts` — Blocks edit calls on files not read/written in current session. Resets after compaction.
-  - `compact-advisor.ts` — Suggests compaction at 150k tokens with task-aware instructions. 5-minute cooldown.
+  - `compact-advisor.ts` — Silent context-ceiling autocompaction (~200k) on `turn_end`, so large-window models compact before degrading. Resumes mid-task autonomous runs after compacting (nudges the agent to continue), since proactive compaction otherwise stalls the loop.
   - `continue.ts` — `/continue` command: writes distilled session state to `.scratch/sessions/`, starts fresh session in same window
   - `ai-knowledge/` — Per-task agent memory in a configured markdown vault. Picker on session start, `journal_append`/`current_task` tools, `/task` command, git auto-commit. Default-off; activates when `~/.pi/agent/ai-knowledge.json` has a valid `rootPath`.
   - `journal-advisor.ts` — Reminds the agent to `journal_append` when an AI-Knowledge task is active and context has grown 50k tokens since the last reminder/journal entry. Permissive wording to avoid pro-forma entries.
