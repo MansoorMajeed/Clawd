@@ -9,7 +9,7 @@ import {
 	sliceSystemPrompt,
 	sumToolTokens,
 	toolDefTokens,
-} from "../extensions/context-pure";
+} from "../extensions/context/context-pure";
 
 const MEMORY = `\n\n<project_context>\n\n<project_instructions path="CLAUDE.md">\nbe nice\n</project_instructions>\n\n</project_context>\n`;
 const SKILLS = [
