@@ -1,6 +1,6 @@
 ---
 name: irreversible-action-checklist
-description: "This skill should be used when about to perform an irreversible or hard-to-undo action on a device, system, or production environment. Trigger when deploying payloads, flashing firmware, writing to hardware, modifying boot sequences, overwriting files on embedded devices, sending destructive USB commands, triggering device reboots with staged changes, or any action where failure means bricking or requiring physical recovery. Also applies to database migrations, production deployments, and any 'point of no return' operation."
+description: "This skill should be used when about to perform an irreversible or hard-to-undo action on a device, system, or production environment. Applies to database migrations, production deployments, and any 'point of no return' operation."
 ---
 
 # Irreversible Action Checklist
