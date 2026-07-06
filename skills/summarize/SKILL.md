@@ -1,6 +1,6 @@
 ---
 name: summarize
-description: "Fetch a URL or convert a local file (PDF/DOCX/HTML/etc.) into Markdown using `uvx markitdown`, optionally it can summarize"
+description: "Fetch a URL or convert a local file (PDF/DOCX/HTML/etc.) into Markdown using `uvx --python 3.12 markitdown`, optionally it can summarize"
 ---
 
 Turn “things” (URLs, PDFs, Word docs, PowerPoints, HTML pages, text files, etc.) into **Markdown** so they can be inspected/quoted/processed like normal text.
@@ -22,7 +22,7 @@ Use this skill when you need to:
 Run from **this skill folder** (the agent should `cd` here first):
 
 ```bash
-uvx --from 'markitdown[pdf]' markitdown <url-or-path>
+uvx --python 3.12 --from 'markitdown[pdf]' markitdown <url-or-path>
 ```
 
 To write Markdown to a temp file (prints the path) use the wrapper:
@@ -36,7 +36,7 @@ Tip: when summarizing, the script will **always** write the full converted Markd
 Write Markdown to a specific file:
 
 ```bash
-uvx --from 'markitdown[pdf]' markitdown <url-or-path> > /tmp/doc.md
+uvx --python 3.12 --from 'markitdown[pdf]' markitdown <url-or-path> > /tmp/doc.md
 ```
 
 ### Convert + summarize with haiku-4-5 (pass context!)
@@ -54,6 +54,6 @@ node to-markdown.mjs <url-or-path> --summary --prompt "Focus on security implica
 ```
 
 This will:
-1) convert to Markdown via `uvx --from 'markitdown[pdf]' markitdown`
+1) convert to Markdown via `uvx --python 3.12 --from 'markitdown[pdf]' markitdown`
 2) write the full Markdown to a temp `.md` file and print its path as a "Hint" line
 3) run `pi --model claude-haiku-4-5` (no-tools, no-session) to summarize using your extra prompt

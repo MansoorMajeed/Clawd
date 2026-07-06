@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Convert a URL or local file to Markdown using `uvx markitdown`.
+ * Convert a URL or local file to Markdown using `uvx --python 3.12 markitdown`.
  * Optionally summarize the produced Markdown via `pi` (claude-haiku-4-5).
  *
  * Note: `markitdown` can fetch URLs on its own; this script mainly adds:
@@ -134,7 +134,7 @@ if (!input) usageAndExit(1);
 function runMarkitdown(arg) {
   // Include PDF support by default because many document URLs (for example arXiv PDFs)
   // are detected as PDFs only after fetching, so extension-based switching is unreliable.
-  const result = spawnSync('uvx', ['--from', 'markitdown[pdf]', 'markitdown', arg], {
+  const result = spawnSync('uvx', ['--python', '3.12', '--from', 'markitdown[pdf]', 'markitdown', arg], {
     encoding: 'utf-8',
     maxBuffer: 50 * 1024 * 1024
   });
