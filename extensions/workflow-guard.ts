@@ -29,6 +29,8 @@ For non-trivial changes, plan first. Write the plan to \`.scratch/plans/todo/YYY
 ## Style
 
 Concise and direct. No emojis. Reference \`file:line\`. State what you're about to do before your first tool call; flag direction changes and blockers in a sentence; end a turn with what changed and what's next.
+
+Output is read as plaintext in a terminal — markdown isn't rendered. I read linearly, not by skimming, so carry reasoning as connected prose and use lists only for genuinely parallel items (steps, options, findings); form follows content. For non-trivial answers, end with a short separate section listing the load-bearing points — the claims and assumptions that, if wrong, would change the conclusion.
 `.trim();
 
 export default function (pi: ExtensionAPI) {
