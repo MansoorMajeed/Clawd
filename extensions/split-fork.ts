@@ -1,11 +1,11 @@
 /**
  * Split-Fork Extension — Fork session into a new pane
  *
- * Detects the current multiplexer (zellij, tmux, Ghostty) and opens a new
- * pane/split with a forked Pi session. Adapted from mitsuhiko/agent-stuff
- * with zellij and tmux support added.
+ * Detects the current multiplexer (zellij, tmux, Herdr, Ghostty) and opens a
+ * new pane/split with a forked Pi session. Adapted from mitsuhiko/agent-stuff
+ * with zellij, tmux, and Herdr support added.
  *
- * Priority: zellij > tmux > Ghostty (AppleScript, macOS only)
+ * Priority: zellij > tmux > Herdr > Ghostty (AppleScript, macOS only)
  */
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
@@ -14,11 +14,12 @@ import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import { execSync } from "node:child_process";
 
-type Multiplexer = "zellij" | "tmux" | "ghostty" | null;
+type Multiplexer = "zellij" | "tmux" | "herdr" | "ghostty" | null;
 
 function detectMultiplexer(): Multiplexer {
 	if (process.env.ZELLIJ_SESSION_NAME) return "zellij";
 	if (process.env.TMUX) return "tmux";
+	if (process.env.HERDR_ENV === "1") return "herdr";
 	if (process.platform === "darwin") return "ghostty";
 	return null;
 }
@@ -133,6 +134,40 @@ async function splitTmux(cwd: string, command: string): Promise<{ ok: boolean; e
 	}
 }
 
+async function splitHerdr(pi: ExtensionAPI, cwd: string, command: string): Promise<{ ok: boolean; error?: string }> {
+	const splitResult = await pi.exec("herdr", [
+		"pane",
+		"split",
+		"--current",
+		"--direction",
+		"right",
+		"--cwd",
+		cwd,
+		"--focus",
+	]);
+	if (splitResult.code !== 0) {
+		return { ok: false, error: splitResult.stderr?.trim() || splitResult.stdout?.trim() || "herdr pane split error" };
+	}
+
+	let paneId: unknown;
+	try {
+		const response = JSON.parse(splitResult.stdout);
+		paneId = response?.result?.pane?.pane_id;
+	} catch {
+		return { ok: false, error: "Unable to parse Herdr split response." };
+	}
+	if (typeof paneId !== "string" || !paneId) {
+		return { ok: false, error: "Herdr split response did not include a pane ID." };
+	}
+
+	const runResult = await pi.exec("herdr", ["pane", "run", paneId, command]);
+	if (runResult.code !== 0) {
+		const error = runResult.stderr?.trim() || runResult.stdout?.trim() || "herdr pane run error";
+		return { ok: false, error: `${error} (created pane ${paneId})` };
+	}
+	return { ok: true };
+}
+
 async function splitGhostty(pi: ExtensionAPI, cwd: string, startupInput: string): Promise<{ ok: boolean; error?: string }> {
 	const result = await pi.exec("osascript", ["-e", GHOSTTY_SPLIT_SCRIPT, "--", cwd, startupInput]);
 	if (result.code !== 0) {
@@ -143,11 +178,11 @@ async function splitGhostty(pi: ExtensionAPI, cwd: string, startupInput: string)
 
 export default function (pi: ExtensionAPI): void {
 	pi.registerCommand("split-fork", {
-		description: "Fork this session into a new pane (zellij/tmux/Ghostty). Usage: /split-fork [optional prompt]",
+		description: "Fork this session into a new pane (zellij/tmux/Herdr/Ghostty). Usage: /split-fork [optional prompt]",
 		handler: async (args, ctx) => {
 			const mux = detectMultiplexer();
 			if (!mux) {
-				ctx.ui.notify("/split-fork requires zellij, tmux, or macOS Ghostty.", "warning");
+				ctx.ui.notify("/split-fork requires zellij, tmux, Herdr, or macOS Ghostty.", "warning");
 				return;
 			}
 
@@ -162,6 +197,8 @@ export default function (pi: ExtensionAPI): void {
 				result = await splitZellij(ctx.cwd, command);
 			} else if (mux === "tmux") {
 				result = await splitTmux(ctx.cwd, command);
+			} else if (mux === "herdr") {
+				result = await splitHerdr(pi, ctx.cwd, command);
 			} else {
 				result = await splitGhostty(pi, ctx.cwd, `${command}\n`);
 			}
