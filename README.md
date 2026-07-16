@@ -4,9 +4,9 @@ Custom [Pi](https://github.com/earendil-works/pi) coding agent package. Lean, op
 
 ## Why
 
-Stock coding agents ship with massive generic system prompts that try to be everything to everyone. Clawd strips that back — a lean agent built around a [custom system prompt](extensions/workflow-guard.ts) tuned to how I actually work: discussion before code, plans before execution, no unsolicited "improvements."
+Clawd layers an opinionated [workflow prompt](system-prompt.md) over Pi's compact default prompt: discussion before code, plans before execution, no unsolicited "improvements." A small [loader extension](extensions/system-prompt.ts) keeps the prompt in the package, so installs and updates apply it without modifying the user's global `SYSTEM.md`.
 
-Built on [Pi](https://lucumr.pocoo.org/2026/1/31/pi/), an open-source coding agent that's designed to be extended rather than configured. The system prompt is the soul of this thing — fork it and make it yours.
+Built on [Pi](https://lucumr.pocoo.org/2026/1/31/pi/), an open-source coding agent that's designed to be extended rather than configured. The workflow prompt is the soul of this thing — fork it and make it yours.
 
 ## ⚠️ Warning
 
@@ -38,15 +38,15 @@ pi install npm:pi-subagents
 
 ## Updating
 
-Push changes to this repo, then `pi update` pulls them. To auto-update on every launch, add one of these to `~/.zshrc`:
+Push changes to this repo, then `pi update --extensions` updates unpinned package installs. To auto-update packages on every launch, add one of these to `~/.zshrc`:
 
 ```bash
-# Simple: update before every launch (adds ~1s latency)
-alias pi='pi update && command pi'
+# Simple: update packages before every launch (adds ~1s latency)
+alias pi='pi update --extensions && command pi'
 
-# Background: update silently, changes apply next launch
+# Background: update packages silently, changes apply next launch
 pi() {
-  command pi update &>/dev/null &
+  command pi update --extensions &>/dev/null &
   command pi "$@"
 }
 ```

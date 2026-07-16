@@ -6,8 +6,9 @@ Custom Pi coding agent package — lean system prompt, opinionated workflow. Inc
 
 ## Structure
 
+- `system-prompt.md` — Clawd workflow prompt, prepended to Pi's assembled system prompt
 - `extensions/` — Pi extensions (TypeScript)
-  - `workflow-guard.ts` — Injects custom system prompt, enforces "no code before plan" rule
+  - `system-prompt.ts` — Loads the tracked workflow prompt without modifying global Pi configuration
   - `permission-guard/` — Default-deny permission system. Scopes file operations to project/read-only/read-write paths, blocks destructive commands, prompts for outside access. Supports `/add-dir`, `/add-dir-read`, `--yolo` bypass, and `.pi/permissions.json` allowlists
   - `handoff.ts` — Generates a context-transfer prompt from the current conversation for a new focused session
   - `internet-search.ts` — Internet search via DuckDuckGo with isolated LLM extraction to prevent prompt injection
@@ -50,7 +51,7 @@ pi install git:github.com/MansoorMajeed/Clawd
 
 ## How it works
 
-The coding agent (Pi + Opus) handles main reasoning with a minimal system prompt. Extensions provide safety guardrails, interactive tooling, and structured workflows. Skills provide step-by-step guidance for common development tasks.
+The coding agent (Pi + Opus) handles main reasoning. `system-prompt.ts` prepends the tracked workflow prompt to Pi's assembled system prompt. Other extensions provide safety guardrails, interactive tooling, and structured workflows. Skills provide step-by-step guidance for common development tasks.
 
 This is a base package — environment-specific tools (MCP bridges, admin integrations, custom templates) can be layered on top as separate Pi overlay packages.
 

@@ -24,7 +24,7 @@ function decodeXmlEntities(s: string): string {
  * Split the assembled system prompt into three regions by literal markers:
  *  - memory: <project_context> … </project_context>   (CLAUDE.md / AGENTS.md)
  *  - skills: "The following skills provide…" … </available_skills>
- *  - system: everything else (workflow-guard prompt + pi base + appended preambles)
+ *  - system: everything else (custom prompt + pi base + appended preambles)
  * Missing regions come back as "". `system` is the original with the other two removed.
  */
 export function sliceSystemPrompt(prompt: string): { system: string; memory: string; skills: string } {
