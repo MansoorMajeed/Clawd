@@ -38,17 +38,10 @@ pi install npm:pi-subagents
 
 ## Updating
 
-Push changes to this repo, then `pi update --extensions` updates unpinned package installs. To auto-update packages on every launch, add one of these to `~/.zshrc`:
+Push changes to this repo, then `pi update --extensions` updates unpinned package installs. To update packages before every launch, add this to `~/.zshrc`:
 
 ```bash
-# Simple: update packages before every launch (adds ~1s latency)
 alias pi='pi update --extensions && command pi'
-
-# Background: update packages silently, changes apply next launch
-pi() {
-  command pi update --extensions &>/dev/null &
-  command pi "$@"
-}
 ```
 
 ## Skills
