@@ -2,8 +2,8 @@
  * Compact Gauge
  *
  * Status-row indicator of context usage against a personal compaction
- * threshold (150k tokens), separate from pi's built-in "% of model max"
- * gauge. Format: `compact 8% (12k/150k)`.
+ * threshold (200k tokens), separate from pi's built-in "% of model max"
+ * gauge. Format: `compact 8% (12k/200k)`.
  *
  * Colors:
  *   <60%        default
@@ -14,7 +14,7 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-const THRESHOLD_TOKENS = 150_000;
+const THRESHOLD_TOKENS = 200_000;
 const STATUS_KEY = "compact-gauge";
 
 function formatStatus(tokens: number, ctx: ExtensionContext): string {
@@ -35,7 +35,7 @@ function render(ctx: ExtensionContext): void {
 	const usage = ctx.getContextUsage();
 	// After compaction, pi reports `{ tokens: null, percent: null }` until a
 	// fresh assistant response arrives. Clear the gauge rather than render
-	// "0% (0k/150k)" — falsely reassuring.
+	// "0% (0k/200k)" — falsely reassuring.
 	if (!usage || usage.tokens == null) {
 		ctx.ui.setStatus(STATUS_KEY, undefined);
 		return;
