@@ -1,23 +1,30 @@
 /**
  * Compact Advisor
  *
- * Silent context-ceiling autocompaction. Compacts when context usage crosses a
- * working ceiling (~200k), so the agent doesn't degrade on large 1M-window
- * models that would otherwise only compact near overflow (~984k).
+ * Silent quality-ceiling autocompaction. Treats ~200k as a soft ceiling: let
+ * the active run finish, then compact while idle. If a continuing run reaches
+ * ~250k, compact at the next legal boundary so quality cannot drift forever.
  *
  * Fires on turn_end (per LLM round-trip) so it triggers mid-run during long
  * autonomous tasks, not just at the end of a user prompt. Native auto-compaction
  * stays enabled as the overflow safety net.
  *
- * Resumes after compacting: a proactive compaction ends the in-flight agent loop
- * with nothing to restart it (pi only auto-retries on genuine overflow recovery,
- * not on threshold compaction). If the interrupted turn was mid-task (had tool
- * calls), we nudge the agent to continue so long autonomous runs don't stall.
+ * Pi cannot compact when an oversized trailing tool result leaves no legal cut
+ * point. Preflight the same cut-point rules before calling ctx.compact(), because
+ * ctx.compact() aborts the active run even when preparation subsequently fails.
+ * Hard-ceiling compaction resumes interrupted tool runs after completion.
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import {
+	findCutPoint,
+	SettingsManager,
+	type ExtensionAPI,
+	type ExtensionContext,
+	type SessionEntry,
+} from "@earendil-works/pi-coding-agent";
 
 export const TARGET_TOKENS = 200_000;
+export const HARD_TARGET_TOKENS = 250_000;
 export const RESERVE_MARGIN = 32_000;
 
 const COMPACT_INSTRUCTIONS =
@@ -35,8 +42,53 @@ export function computeCompactThreshold(contextWindow: number): number {
 	return Math.min(TARGET_TOKENS, contextWindow - RESERVE_MARGIN);
 }
 
+export function computeHardCompactThreshold(contextWindow: number): number {
+	return Math.min(HARD_TARGET_TOKENS, contextWindow - RESERVE_MARGIN);
+}
+
+export function shouldCompactAtBoundary(
+	tokens: number,
+	contextWindow: number,
+	settled: boolean,
+	midTask: boolean,
+): boolean {
+	if (settled) return tokens >= computeCompactThreshold(contextWindow);
+	return midTask && tokens >= computeHardCompactThreshold(contextWindow);
+}
+
+export function isCompactionReady(entries: SessionEntry[], keepRecentTokens: number): boolean {
+	if (entries.length === 0 || entries[entries.length - 1].type === "compaction") return false;
+
+	let boundaryStart = 0;
+	for (let i = entries.length - 1; i >= 0; i--) {
+		const entry = entries[i];
+		if (entry.type !== "compaction") continue;
+		const firstKeptIndex = entries.findIndex((candidate) => candidate.id === entry.firstKeptEntryId);
+		boundaryStart = firstKeptIndex >= 0 ? firstKeptIndex : i + 1;
+		break;
+	}
+
+	const cutPoint = findCutPoint(entries, boundaryStart, entries.length, keepRecentTokens);
+	if (!entries[cutPoint.firstKeptEntryIndex]?.id) return false;
+
+	// Pi compacts both the history before a split turn and the discarded turn
+	// prefix. Together those ranges cover boundaryStart..firstKeptEntryIndex.
+	for (let i = boundaryStart; i < cutPoint.firstKeptEntryIndex; i++) {
+		const entry = entries[i];
+		if (
+			entry.type === "message" ||
+			entry.type === "custom_message" ||
+			(entry.type === "branch_summary" && !!entry.summary)
+		) {
+			return true;
+		}
+	}
+	return false;
+}
+
 export default function (pi: ExtensionAPI) {
 	let compacting = false;
+	const terminatingToolCallIds = new Set<string>();
 
 	function resumeIfInterrupted(midTask: boolean, ctx: ExtensionContext): void {
 		if (!midTask) return;
@@ -51,18 +103,14 @@ export default function (pi: ExtensionAPI) {
 		if (ctx.hasUI) ctx.ui.notify("Resumed after compaction", "info");
 	}
 
-	pi.on("turn_end", async (event, ctx) => {
+	function compactIfReady(midTask: boolean, ctx: ExtensionContext): void {
 		if (compacting) return;
 
-		const usage = ctx.getContextUsage();
-		if (!usage || usage.tokens == null) return;
-
-		if (usage.tokens < computeCompactThreshold(usage.contextWindow)) return;
-
-		// The turn made tool calls => the agent intended to keep working, so the
-		// compaction is interrupting a mid-task run and we should resume it. A
-		// text-only turn means the agent was finishing; let it go idle.
-		const midTask = event.toolResults.length > 0;
+		const settings = SettingsManager.create(ctx.cwd, undefined, {
+			projectTrusted: ctx.isProjectTrusted(),
+		}).getCompactionSettings();
+		const entries = ctx.sessionManager.getBranch();
+		if (!isCompactionReady(entries, settings.keepRecentTokens)) return;
 
 		compacting = true;
 		ctx.compact({
@@ -71,9 +119,42 @@ export default function (pi: ExtensionAPI) {
 				compacting = false;
 				resumeIfInterrupted(midTask, ctx);
 			},
-			onError: () => {
+			onError: (error) => {
 				compacting = false;
+				if (midTask && error.message.includes("Nothing to compact")) resumeIfInterrupted(true, ctx);
 			},
 		});
+	}
+
+	pi.on("turn_start", () => {
+		terminatingToolCallIds.clear();
+	});
+
+	pi.on("tool_execution_end", (event) => {
+		if (event.result?.terminate === true) terminatingToolCallIds.add(event.toolCallId);
+		else terminatingToolCallIds.delete(event.toolCallId);
+	});
+
+	pi.on("turn_end", (event, ctx) => {
+		if (compacting) return;
+
+		const usage = ctx.getContextUsage();
+		if (!usage || usage.tokens == null) return;
+
+		const allToolsTerminate =
+			event.toolResults.length > 0 &&
+			event.toolResults.every((result) => terminatingToolCallIds.has(result.toolCallId));
+		const midTask = event.toolResults.length > 0 && !allToolsTerminate;
+		if (!shouldCompactAtBoundary(usage.tokens, usage.contextWindow, false, midTask)) return;
+		compactIfReady(true, ctx);
+	});
+
+	pi.on("agent_settled", (_event, ctx) => {
+		if (compacting || !ctx.isIdle() || ctx.hasPendingMessages()) return;
+
+		const usage = ctx.getContextUsage();
+		if (!usage || usage.tokens == null) return;
+		if (!shouldCompactAtBoundary(usage.tokens, usage.contextWindow, true, false)) return;
+		compactIfReady(false, ctx);
 	});
 }
