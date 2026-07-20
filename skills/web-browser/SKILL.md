@@ -11,11 +11,13 @@ Minimal CDP tools for collaborative site exploration.
 ## Start Chrome
 
 ```bash
-./scripts/start.js              # Fresh profile
-./scripts/start.js --profile    # Copy your profile (cookies, logins)
+./scripts/start.js
 ```
 
-Start Chrome on `:9222` with remote debugging.
+Start or reuse Chrome on `:9222` with remote debugging. The browser uses a
+persistent, dedicated profile at `~/.cache/agent-web/chrome-profile`; it does
+not close Chrome or copy data from your normal profiles. Sign in once in the
+automation profile when a site requires authentication.
 
 ## Navigate
 
