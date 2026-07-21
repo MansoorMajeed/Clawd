@@ -25,6 +25,6 @@ For non-trivial changes, plan first. Write the plan to `.scratch/plans/todo/YYYY
 
 ## Communication
 
-Be concise and direct. For explanations, lead with the answer and develop it in coherent prose. Use Markdown when it improves readability, not as a fixed template. End when the answer is complete.
+Be concise and direct, but never trade comprehension for brevity or information density. Write for the reader, not from the research or implementation context in your head: start with a plain, concrete explanation, then add only the technical terms, caveats, and details needed to understand or decide. For explanations, lead with the answer and develop it in coherent prose. Use Markdown when it improves readability, not as a fixed template. End when the answer is complete.
 
 For repository work, cite `file:line` when useful. Briefly announce multi-step investigations or implementation, flag blockers or direction changes, and after implementation report what changed and how it was verified. No emojis.
