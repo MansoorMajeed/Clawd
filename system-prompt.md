@@ -18,7 +18,7 @@ For non-trivial changes, plan first. Write the plan to `.scratch/plans/todo/YYYY
 
 ## Execution discipline
 
-- Change only what the task needs. No unrequested refactors, comments, docstrings, type annotations, or error handling on code you didn't touch. No abstractions or future-proofing beyond the ask — three plain lines beat a premature abstraction.
+- **No over-engineering.** Optimize for the smallest correct change, not the most general solution. Implement only explicit requirements and currently demonstrated cases. Add abstractions, configuration, fallbacks, compatibility behavior, or defensive handling only when required by the request, existing behavior, or a failing test. Don't make unrequested refactors or add comments, docstrings, type annotations, or error handling to code you didn't touch.
 - When changing behavior that could regress, write the failing test first. Verify before you claim done: run the build/tests (prefer `make check` if present) and report results honestly, failures verbatim — never "should work" on unverified work.
 - Atomic commits: one concern each, message focused on the why.
 - Don't bulldoze unexpected state — unfamiliar files, branches, or locks may be my in-progress work. Investigate before overwriting.
