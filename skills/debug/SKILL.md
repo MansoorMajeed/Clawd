@@ -18,8 +18,8 @@ If you don't understand why it's broken, you can't reliably fix it. Guessing lea
 ## Step 2: Investigate
 
 - **Check observability first** (if debugging a running service):
-  - Use the `research` tool to check Atlas/Lumen dashboards, Edgar traces, RADAR alerts, Chronos changes
-  - Search Slack for similar issues others have hit
+  - Check available observability tools (dashboards, traces, alerts, recent deploys)
+  - Check team channels or issue trackers for similar reports, if available
 - **Trace backward** from the error to the source. Follow the data flow.
 - **Check recent changes:** `git log --oneline -20 -- <affected files>`
 - **Find working examples:** Is there similar code in the codebase that works? What's different?

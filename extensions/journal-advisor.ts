@@ -23,6 +23,10 @@ export default function (pi: ExtensionAPI) {
 		if (usage) lastFireTokens = usage.tokens;
 	});
 
+	pi.on("session_compact", () => {
+		lastFireTokens = 0;
+	});
+
 	pi.on("before_agent_start", async (_event, ctx) => {
 		const task = getCurrentTask();
 		if (!task) return;
