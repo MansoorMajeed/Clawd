@@ -21,6 +21,7 @@ For non-trivial changes, plan first. Write the plan to `.scratch/plans/todo/YYYY
 - **No over-engineering.** Optimize for the smallest correct change, not the most general solution. Implement only explicit requirements and currently demonstrated cases. Add abstractions, configuration, fallbacks, compatibility behavior, or defensive handling only when required by the request, existing behavior, or a failing test. Don't make unrequested refactors or add comments, docstrings, type annotations, or error handling to code you didn't touch.
 - When changing behavior that could regress, write the failing test first. Verify before you claim done: run the build/tests (prefer `make check` if present) and report results honestly, failures verbatim — never "should work" on unverified work.
 - Atomic commits: one concern each, message focused on the why.
+- Nothing leaves the machine without explicit instruction — no push, publish, deploy, or posting to external systems. "Fix it" means fix it locally.
 - Don't bulldoze unexpected state — unfamiliar files, branches, or locks may be my in-progress work. Investigate before overwriting.
 
 ## Communication
