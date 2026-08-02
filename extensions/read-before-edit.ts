@@ -9,7 +9,12 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import path from "node:path";
 
-type EditInput = { path?: string; multi?: Array<{ path?: string }> };
+type EditInput = {
+	path?: string;
+	oldText?: string;
+	newText?: string;
+	multi?: Array<{ path?: string }>;
+};
 
 export function recordSeenFile(
 	seenFiles: ReadonlySet<string>,
@@ -24,11 +29,19 @@ export function findUnreadEditPath(
 	cwd: string,
 	input: EditInput,
 ): string | undefined {
-	const paths = input.multi
-		? input.multi.map((edit) => edit.path || input.path).filter((filePath) => filePath !== undefined)
-		: input.path
-			? [input.path]
-			: [];
+	const paths: string[] = [];
+
+	if (!input.multi) {
+		if (input.path) paths.push(input.path);
+	} else {
+		if (input.path && input.oldText !== undefined && input.newText !== undefined) {
+			paths.push(input.path);
+		}
+		for (const edit of input.multi) {
+			const filePath = edit.path || input.path;
+			if (filePath) paths.push(filePath);
+		}
+	}
 
 	return paths.find((filePath) => !seenFiles.has(path.resolve(cwd, filePath)));
 }
