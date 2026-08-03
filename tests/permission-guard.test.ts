@@ -6,6 +6,8 @@ import {
 	checkHardBlock,
 	checkBroadGitAdd,
 	checkDangerousPattern,
+	decideRmAction,
+	extractRmInvocations,
 	isPathAllowed,
 	checkAccess,
 	toolMode,
@@ -325,6 +327,85 @@ describe("checkDangerousPattern", () => {
 
 	it("does NOT catch dangerous pattern in quotes", () => {
 		expect(checkDangerousPattern("echo 'git push --force'")).toBeNull();
+	});
+
+	it("exempts parsed head-rm segments but still catches other dangerous segments", () => {
+		expect(checkDangerousPattern("rm -rf foo")).toBeNull();
+		expect(checkDangerousPattern("rm -rf foo && dd if=/dev/zero of=/dev/sda")).not.toBeNull();
+		expect(checkDangerousPattern("find . | xargs rm -rf")).not.toBeNull();
+	});
+});
+
+describe("extractRmInvocations", () => {
+	it("extracts supported recursive flag forms and targets", () => {
+		for (const command of [
+			"rm -rf foo",
+			"rm -fr foo",
+			"rm -r -f foo",
+			"rm --recursive --force foo",
+			"rm -R -- foo",
+		]) {
+			expect(extractRmInvocations(command)).toEqual([
+				{ targets: [{ raw: "foo", resolvePath: "foo", literal: true }], complete: true },
+			]);
+		}
+	});
+
+	it("classifies dynamic targets and dirname globs as non-literal", () => {
+		expect(extractRmInvocations("rm -rf $DIR")[0]?.targets[0]?.literal).toBe(false);
+		expect(extractRmInvocations("rm -rf `cmd`")[0]?.targets[0]?.literal).toBe(false);
+		expect(extractRmInvocations("rm -rf */x")[0]?.targets[0]?.literal).toBe(false);
+	});
+
+	it("resolves basename globs through their dirname", () => {
+		expect(extractRmInvocations("rm -rf build/*")).toEqual([
+			{ targets: [{ raw: "build/*", resolvePath: "build", literal: true }], complete: true },
+		]);
+	});
+
+	it("does not parse rm outside command-head position", () => {
+		expect(extractRmInvocations("find . | xargs rm -rf")).toEqual([]);
+	});
+});
+
+describe("decideRmAction", () => {
+	const ctx = {
+		readWritePaths: ["/work/project"],
+		tempPaths: ["/tmp"],
+		home: "/home/test",
+	};
+
+	it("allows strict descendants of write scopes and temp paths", () => {
+		expect(decideRmAction([{ raw: "foo", resolvedPath: "/work/project/foo" }], ctx).action).toBe("allow");
+		expect(decideRmAction([{ raw: "/tmp/xyz", resolvedPath: "/tmp/xyz" }], ctx).action).toBe("allow");
+	});
+
+	it("prompts outside scopes and at scope roots", () => {
+		for (const resolvedPath of ["/etc/x", "/work/project", "/work", "/tmp"]) {
+			expect(decideRmAction([{ raw: resolvedPath, resolvedPath }], ctx).action).toBe("prompt");
+		}
+	});
+
+	it("blocks resolved .git targets", () => {
+		for (const resolvedPath of ["/work/project/.git", "/work/project/.git/objects/x"]) {
+			expect(decideRmAction([{ raw: resolvedPath, resolvedPath }], ctx).action).toBe("block");
+		}
+	});
+
+	it("prompts for unresolved targets", () => {
+		expect(decideRmAction([{ raw: "$DIR", resolvedPath: null }], ctx).action).toBe("prompt");
+	});
+
+	it("does not derive delete permission from broad scopes", () => {
+		expect(
+			decideRmAction([{ raw: "/etc/x", resolvedPath: "/etc/x" }], { ...ctx, readWritePaths: ["/"] }).action,
+		).toBe("prompt");
+		expect(
+			decideRmAction([{ raw: "/home/test/x", resolvedPath: "/home/test/x" }], {
+				...ctx,
+				readWritePaths: ["/home/test"],
+			}).action,
+		).toBe("prompt");
 	});
 });
 

@@ -10,7 +10,7 @@ Built on [Pi](https://lucumr.pocoo.org/2026/1/31/pi/), an open-source coding age
 
 ## ⚠️ Warning
 
-This is **not** a sandboxed agent. Pi gives the LLM direct bash access with no built-in permission system like Claude Code has. The `permission-guard` extension adds basic guardrails (scoped file access, blocked destructive commands), but it is **not a security boundary** — it's a safety net for honest mistakes, not a jail.
+This is **not** a sandboxed agent. Pi gives the LLM direct bash access with no built-in permission system like Claude Code has. The `permission-guard` extension adds basic guardrails (scoped file access, silent in-scope recursive deletes, and hard-blocked resolved `.git` deletion), but it is **not a security boundary** — it's a safety net for honest mistakes, not a jail.
 
 **Run this in a VM, container, or disposable environment** if you're not comfortable with an LLM having shell access to your machine.
 
