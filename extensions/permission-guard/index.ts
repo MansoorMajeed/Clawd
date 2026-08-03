@@ -9,12 +9,15 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth, type Component } from "@earendil-works/pi-tui";
 import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, parse, relative, resolve } from "node:path";
 import {
 	checkHardBlock,
 	checkBroadGitAdd,
 	checkDangerousPattern,
 	checkAccess,
+	decideRmAction,
+	extractRmInvocations,
 	extractPaths,
 	toolMode,
 	type AccessMode,
@@ -530,9 +533,37 @@ export default function (pi: ExtensionAPI) {
 				};
 			}
 
+			const rmInvocations = extractRmInvocations(command);
+			let rmPromptTarget: string | undefined;
+			for (const invocation of rmInvocations) {
+				if (!invocation.complete) continue;
+
+				const targets = await Promise.all(
+					invocation.targets.map(async (target) => ({
+						raw: target.raw,
+						resolvedPath: target.literal ? await resolvePath(target.resolvePath, ctx.cwd) : null,
+					})),
+				);
+				const decision = decideRmAction(targets, {
+					readWritePaths,
+					tempPaths: await Promise.all([resolvePath(tmpdir(), "/"), resolvePath("/tmp", "/")]),
+					home: process.env.HOME ? await resolvePath(process.env.HOME, "/") : undefined,
+				});
+
+				if (decision.action === "block") {
+					return {
+						block: true,
+						reason: `HARD BLOCKED: Delete .git path (${decision.target}). This action is never allowed.`,
+					};
+				}
+				if (decision.action === "prompt") rmPromptTarget ??= decision.target ?? "unknown target";
+			}
+
 			// Tier 3: Dangerous patterns — prompt unless --yolo
 			if (!yoloMode) {
-				const dangerous = checkDangerousPattern(command);
+				const dangerous = rmPromptTarget
+					? { description: `Recursive rm target requires confirmation: ${rmPromptTarget}` }
+					: checkDangerousPattern(command);
 				if (dangerous) {
 					const choice = await ctx.ui.select(
 						`Dangerous Command: ${dangerous.description}\nCommand: ${command}`,
