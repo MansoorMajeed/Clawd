@@ -185,6 +185,72 @@ function tokenizeShellSegment(segment: string): string[] {
 	return tokens;
 }
 
+export interface RmTarget {
+	raw: string;
+	resolvePath: string;
+	literal: boolean;
+}
+
+export interface RmInvocation {
+	targets: RmTarget[];
+	complete: boolean;
+}
+
+function parseRmSegment(segment: string): RmInvocation | null {
+	const tokens = tokenizeShellSegment(segment);
+	if (tokens[0] !== "rm") return null;
+
+	const targets: RmTarget[] = [];
+	let recursive = false;
+	let options = true;
+	let complete = true;
+
+	for (const token of tokens.slice(1)) {
+		if (options && token === "--") {
+			options = false;
+			continue;
+		}
+
+		if (options && token.startsWith("-") && token !== "-") {
+			if (token === "--recursive") {
+				recursive = true;
+				continue;
+			}
+			if (token === "--force") continue;
+			if (/^-[rfR]+$/.test(token)) {
+				recursive ||= /[rR]/.test(token);
+				continue;
+			}
+			complete = false;
+			continue;
+		}
+
+		options = false;
+		const slash = token.lastIndexOf("/");
+		const directory = slash === -1 ? "." : token.slice(0, slash) || "/";
+		const basename = token.slice(slash + 1);
+		const dirnameHasGlob = /[*?[]/.test(directory);
+		const basenameHasGlob = /[*?[]/.test(basename);
+		targets.push({
+			raw: token,
+			resolvePath: basenameHasGlob ? directory : token,
+			literal: !/[$`]/.test(token) && !dirnameHasGlob,
+		});
+	}
+
+	if (!recursive) return null;
+	return { targets, complete: complete && targets.length > 0 };
+}
+
+export function extractRmInvocations(command: string): RmInvocation[] {
+	const invocations: RmInvocation[] = [];
+	for (const segment of splitCommands(command)) {
+		const invocation = parseRmSegment(segment);
+		if (invocation) invocations.push(invocation);
+	}
+	return invocations;
+}
+
 const GIT_GLOBAL_OPTIONS_WITH_VALUE = new Set([
 	"-C",
 	"-c",
@@ -448,13 +514,15 @@ export function checkHardBlock(command: string): { description: string } | null 
 
 // ─── Dangerous Patterns ───
 
-const DANGEROUS_PATTERNS: Array<{ pattern: RegExp; description: string }> = [
+const RM_DANGEROUS_PATTERNS: Array<{ pattern: RegExp; description: string }> = [
 	// File deletion
 	{ pattern: /\brm\s+.*-[^\s]*r[^\s]*f/, description: "rm with -rf (recursive force delete)" },
 	{ pattern: /\brm\s+.*-[^\s]*f[^\s]*r/, description: "rm with -fr (recursive force delete)" },
 	{ pattern: /\brm\s+-rf\b/, description: "rm -rf" },
 	{ pattern: /\brm\s+-r\b/, description: "rm -r (recursive delete)" },
+];
 
+const DANGEROUS_PATTERNS: Array<{ pattern: RegExp; description: string }> = [
 	// Git destructive
 	{ pattern: /\bgit\s+reset\s+--hard\b/, description: "git reset --hard (destroys uncommitted changes)" },
 	{ pattern: /\bgit\s+push\s+.*--force\b/, description: "git push --force (rewrites remote history)" },
@@ -519,6 +587,12 @@ export function checkDangerousPattern(command: string): { description: string } 
 
 	for (const segment of segments) {
 		const stripped = stripQuotedContent(segment);
+		const rmInvocation = parseRmSegment(segment);
+		if (!rmInvocation?.complete) {
+			for (const { pattern, description } of RM_DANGEROUS_PATTERNS) {
+				if (pattern.test(stripped)) return { description };
+			}
+		}
 		for (const { pattern, description } of DANGEROUS_PATTERNS) {
 			if (pattern.test(stripped)) {
 				return { description };
@@ -535,6 +609,53 @@ function normalizePath(p: string): string {
 	// Remove trailing slashes (but keep root "/")
 	let normalized = p.replace(/\/+$/, "") || "/";
 	return normalized;
+}
+
+export interface ResolvedRmTarget {
+	raw: string;
+	resolvedPath: string | null;
+}
+
+export interface RmDecisionContext {
+	readWritePaths: string[];
+	tempPaths: string[];
+	home?: string;
+}
+
+export interface RmDecision {
+	action: "allow" | "prompt" | "block";
+	target?: string;
+}
+
+function isStrictDescendant(parent: string, child: string): boolean {
+	const normalizedParent = normalizePath(parent);
+	const normalizedChild = normalizePath(child);
+	return normalizedChild !== normalizedParent && normalizedChild.startsWith(normalizedParent + "/");
+}
+
+function isBroadScope(path: string, home?: string): boolean {
+	const normalized = normalizePath(path);
+	return normalized === "/" || (!!home && normalized === normalizePath(home));
+}
+
+export function decideRmAction(targets: ResolvedRmTarget[], ctx: RmDecisionContext): RmDecision {
+	if (targets.length === 0) return { action: "prompt" };
+
+	for (const target of targets) {
+		if (!target.resolvedPath) return { action: "prompt", target: target.raw };
+		const resolved = normalizePath(target.resolvedPath);
+		if (resolved.split("/").includes(".git")) {
+			return { action: "block", target: target.raw };
+		}
+
+		const inWriteScope = ctx.readWritePaths.some(
+			(scope) => !isBroadScope(scope, ctx.home) && isStrictDescendant(scope, resolved),
+		);
+		const inTempPath = ctx.tempPaths.some((scope) => isStrictDescendant(scope, resolved));
+		if (!inWriteScope && !inTempPath) return { action: "prompt", target: target.raw };
+	}
+
+	return { action: "allow" };
 }
 
 export function isPathAllowed(
