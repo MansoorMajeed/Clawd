@@ -9,7 +9,7 @@ Custom Pi coding agent package — lean system prompt, opinionated workflow. Inc
 - `system-prompt.md` — Clawd workflow prompt, prepended to Pi's assembled system prompt
 - `extensions/` — Pi extensions (TypeScript)
   - `system-prompt.ts` — Loads the tracked workflow prompt without modifying global Pi configuration
-  - `permission-guard/` — Default-deny permission system. Scopes file operations to project/read-only/read-write paths, blocks destructive commands, prompts for outside access. Supports `/add-dir`, `/add-dir-read`, `--yolo` bypass, and `.pi/permissions.json` allowlists
+  - `permission-guard/` — Default-deny permission system. Scopes file operations to project/read-only/read-write paths, blocks destructive commands, and prompts for outside access. In-scope recursive deletes are silent; resolved `.git` deletion is hard-blocked. Supports `/add-dir`, `/add-dir-read`, `--yolo` bypass, and `.pi/permissions.json` allowlists
   - `handoff.ts` — Generates a context-transfer prompt from the current conversation for a new focused session
   - `internet-search.ts` — Internet search via DuckDuckGo with isolated LLM extraction to prevent prompt injection
   - `answer.ts` — Extracts questions from last assistant message into interactive Q&A interface (`/answer` or `Ctrl+.`)
