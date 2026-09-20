@@ -9,7 +9,7 @@ Automated shipping workflow. Runs checks, bumps version, updates changelog, push
 
 ## Pre-flight
 
-1. **Verify branch:** Must NOT be on main/master. If on main, stop and tell the user.
+1. **Verify branch:** Must not be the release base branch (commonly main/master). If it is, stop and tell the user; if the base is not yet known, resolve it in Step 4 before changing anything.
 
 ```bash
 git branch --show-current
@@ -23,7 +23,7 @@ git status --short
 
 If there are uncommitted changes, ask the user: commit them first, or stash?
 
-3. **Run checks:**
+3. **Run the project's check command** (prefer `make check` when present):
 
 ```bash
 make check
@@ -31,18 +31,20 @@ make check
 
 If checks fail, **stop**. Fix the issues first. Do not proceed with failing tests.
 
-## Merge Base
+## Resolve and Merge the Base
 
-4. **Pull latest main and merge:**
+4. **Resolve one base branch and remote ref.** Use the user-supplied/PR target when available; otherwise derive it from `origin/HEAD` or ask if ambiguous. Do not assume `main` or `master`. Record `BASE_BRANCH` and use `BASE_REF="origin/$BASE_BRANCH"` consistently below.
+
+Fetch and merge that base only because invoking this shipping workflow is explicit authorization for its network shipping steps:
 
 ```bash
-git fetch origin main
-git merge origin/main
+git fetch origin "$BASE_BRANCH"
+git merge "$BASE_REF"
 ```
 
 If there are merge conflicts, show them and **stop**. The user needs to resolve these.
 
-5. **Re-test after merge:**
+5. **Re-test after merge** with the same project check command:
 
 ```bash
 make check
@@ -66,7 +68,7 @@ Ask the user to confirm the bump level. Update the `VERSION` file.
 Generate a changelog entry from commits on this branch:
 
 ```bash
-git log main..HEAD --oneline --no-merges
+git log "$BASE_REF"..HEAD --oneline --no-merges
 ```
 
 Format as:
@@ -78,24 +80,34 @@ Format as:
 
 Prepend to `CHANGELOG.md`.
 
-8. **Commit version + changelog:**
+Follow an existing changelog heading convention. If there is no `VERSION` file and no established convention, use `## Unreleased - YYYY-MM-DD` instead of an undefined version.
+
+8. **Commit only release files that exist and actually changed.** Build the staging list from `VERSION` and `CHANGELOG.md`; if neither changed, skip the release commit. Do not run an unconditional `git add VERSION CHANGELOG.md`.
 
 ```bash
-git add VERSION CHANGELOG.md
-git commit -m "chore: bump version to X.Y.Z and update changelog"
+release_files=()
+for file in VERSION CHANGELOG.md; do
+  if [[ -f "$file" ]] && ! git diff --quiet -- "$file"; then
+    release_files+=("$file")
+  fi
+done
+if (( ${#release_files[@]} )); then
+  git add -- "${release_files[@]}"
+  git commit -m "chore: update release metadata"
+fi
 ```
 
 ## Documentation Sync
 
 9. **Update docs if needed:**
 
-Quick check — do any `llm-context/` files describe code that was changed on this branch?
+Check whether the project's established documentation describes code changed on this branch:
 
 ```bash
-git diff main --name-only
+git diff "$BASE_REF"...HEAD --name-only
 ```
 
-If yes: update the stale llm-context files and the CLAUDE.md index. Commit the doc updates.
+If yes, use `/skill:update-docs` with this base range and commit only the approved documentation updates.
 
 ## Push & PR
 
@@ -115,7 +127,7 @@ gh pr create --title "<title>" --body "$(cat <<'EOF'
 - <bullet points summarizing changes>
 
 ## Test Plan
-- [ ] `make check` passes
+- [ ] `<project check command>` passes
 - [ ] <specific test scenarios>
 EOF
 )"

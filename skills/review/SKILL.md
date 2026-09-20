@@ -1,6 +1,6 @@
 ---
 name: review
-description: Code review from a fresh context. Run in a separate session — no knowledge of implementation decisions.
+description: Portable file-based code review from a fresh context. Use /skill:review; /review is the separate interactive review extension.
 ---
 
 # Code Review
@@ -9,13 +9,20 @@ description: Code review from a fresh context. Run in a separate session — no 
 
 ## Setup
 
-Identify the base branch and get the diff:
+Establish what the user wants reviewed: a branch/commit range, a folder, or local staged/unstaged/untracked work. Resolve the actual base from the user's request or repository conventions (`origin/HEAD`, the branch's upstream, or the PR target). If it is ambiguous, ask; do not assume `main`, fetch, or check out remote work.
+
+For a branch review, inspect committed work against the resolved base and include local changes when they are in scope:
 
 ```bash
-git log --oneline main..HEAD
-git diff main...HEAD --stat
-git diff main...HEAD
+git log --oneline "$BASE_REF"..HEAD
+git diff "$BASE_REF"...HEAD --stat
+git diff "$BASE_REF"...HEAD
+git diff --cached
+git diff
+git ls-files --others --exclude-standard
 ```
+
+Read in-scope untracked files directly; they do not appear in `git diff`.
 
 If there's a plan file referenced in recent commits or in `.scratch/plans/`, read it to understand the intended scope.
 
@@ -90,10 +97,12 @@ Explain the problem. Show the problematic code if helpful.
 
 Determine the current branch name:
 ```bash
-git branch --show-current
+BRANCH="$(git branch --show-current)"
+SAFE_BRANCH="$(printf '%s' "$BRANCH" | sed 's/[^A-Za-z0-9._-]/-/g')"
+STAMP="$(date +%Y-%m-%d-%H%M%S)"
 ```
 
-Write findings to `.scratch/reviews/YYYY-MM-DD-<branch>.md`. This is the exchange point — the implementer reads this file using the `address-review` skill.
+Write findings to `.scratch/reviews/${STAMP}-${SAFE_BRANCH}.md`. This filesystem-safe, timestamped name is the shared exchange contract with the `address-review` skill. If the user supplied a custom report path, use that instead and report it explicitly.
 
 The file should contain:
 1. A summary section (what was reviewed, branch, base)

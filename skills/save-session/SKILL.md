@@ -17,7 +17,7 @@ Snapshot the current session state so a new context can pick up exactly where we
 
 ## Write Session File
 
-Write to `docs/sessions/YYYY-MM-DD-<topic>.md`:
+Write to `.scratch/sessions/YYYY-MM-DD-<topic>.md` by default. Use durable tracked documentation only when the user explicitly requests it.
 
 ```markdown
 # Session: <topic>
@@ -50,4 +50,4 @@ Write to `docs/sessions/YYYY-MM-DD-<topic>.md`:
 
 Ask the user to review the session file. They may want to add or correct details that aren't visible in the code.
 
-Tell the user: "Start your next session by reading this file: `docs/sessions/YYYY-MM-DD-<topic>.md`"
+Tell the user: "Start your next session by reading this file: `.scratch/sessions/YYYY-MM-DD-<topic>.md`"

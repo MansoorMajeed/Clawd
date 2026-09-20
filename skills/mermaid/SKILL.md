@@ -1,6 +1,6 @@
 ---
 name: mermaid
-description: "Must read guide on creating/editing mermaid charts with valiation tools"
+description: "Must read guide on creating/editing Mermaid charts with validation tools"
 ---
 
 # Mermaid Skill
@@ -21,7 +21,7 @@ Use this skill to quickly validate Mermaid diagrams by parsing + rendering them 
 ```
 
 - Parses and renders the Mermaid source.
-- Non-zero exit = invalid Mermaid syntax.
+- A non-zero exit means parsing or rendering failed. Inspect stderr before changing the diagram: syntax, npm/network, Chromium, permissions, and output-path failures need different fixes.
 - Prints an ASCII preview using `beautiful-mermaid` (best-effort; not all diagram types are supported).
 - If `output.svg` is omitted, the SVG is rendered to a temp file and discarded.
 

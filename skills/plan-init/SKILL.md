@@ -9,7 +9,7 @@ This is the foundational plan for the project. Used once at the start. Take your
 
 ## Step 1: Load Context
 
-Read all files in `llm-context/` and any existing research in `.scratch/research/` first. Understand what research has already been done and what context exists.
+Inspect the project first. Read its actual instruction files (`AGENTS.override.md`, `AGENTS.md`, or `CLAUDE.md`), existing architecture/docs if present, and relevant research in `.scratch/research/`. An empty project is valid; do not invent a documentation layout or build system before discussing it.
 
 ## Step 2: Discussion Phase
 
@@ -25,9 +25,9 @@ Have a real conversation with the user:
 
 Don't rush this. Ask hard questions. Surface risks. This phase can take 30 minutes or several hours — that's fine. Bad assumptions caught here save days of wasted work.
 
-## Step 3: Architecture Document
+## Step 3: Propose the Architecture Document
 
-Once the direction is clear, write `llm-context/architecture.md`:
+Once the direction is clear, propose the architecture content and its destination. Reuse the project's existing documentation convention; if none exists, agree on a path with the user. Keep the proposal in the scratch plan until approval rather than creating tracked files now.
 
 ```markdown
 # Architecture
@@ -51,19 +51,19 @@ Once the direction is clear, write `llm-context/architecture.md`:
 [What we're explicitly NOT building yet, and why]
 ```
 
-This is the big picture vision. All subsequent plans reference it.
+This is the big picture vision. Subsequent plans can reference it after the approved implementation phase creates it.
 
-## Step 4: Configure Makefile
+## Step 4: Propose Project Setup
 
-Based on the tech stack decided in the architecture, configure the Makefile targets. The Makefile is the single source of truth for build/test/lint.
+Identify the build/test/lint convention appropriate to the chosen stack and existing project. Prefer an existing check command; add a Makefile only if the user chooses that convention.
 
-The pattern: component-specific sub-targets (`test-backend`, `test-frontend`), aggregate targets (`test`, `lint`, `fmt`) that combine them. The aggregate targets must always exist — that's what `make check` calls.
+If a Makefile is selected, a useful pattern is component-specific sub-targets (`test-backend`, `test-frontend`) and aggregate targets (`test`, `lint`, `fmt`) combined by `make check`.
 
-Also update CLAUDE.md with the project name, description, and tech stack.
+Propose updates to the project's actual instruction file (`AGENTS.md`, `CLAUDE.md`, or another established file) for the project name, description, stack, and commands. Do not write these tracked files before plan approval.
 
 ## Step 5: MVP Plan
 
-Write the plan to `.scratch/plans/todo/YYYY-MM-DD-HHMMSS-mvp.md`. The first phase should always be "Configure Makefile and CLAUDE.md" if not done yet.
+Write the plan to `.scratch/plans/todo/YYYY-MM-DD-HHMMSS-mvp.md`. Include the agreed architecture and project-setup files in the first phase when they are needed; do not assume Makefile or CLAUDE.md.
 
 ```markdown
 # MVP Implementation Plan
@@ -82,14 +82,14 @@ Phase checklists: one `- [ ]` per phase, ticked `- [x]` when done and verified.
 - [ ] **Phase 1: [description]**
   - Files: [exact paths]
   - Steps: [what to do, with test expectations where relevant]
-  - Verification: `make check`
+  - Verification: [project's actual check command]
 - [ ] **Phase 2: ...**
 ```
 
 **Phase guidelines:**
 - Each phase should be a small, logically complete chunk
-- Include test expectations inline — what to test, not a separate "add tests" phase
-- Include verification steps (`make check`)
+- Include test expectations inline — write a failing regression first when behavior could regress; use applicable syntax/build/docs validation for genuinely non-behavioral work
+- Include the project's actual verification command (`make check` when present)
 - Be specific: exact file paths, exact function names, exact behavior
 
 ## Step 6: Annotation Loop
@@ -103,10 +103,10 @@ Then iterate:
 
 **Watch for over-engineering:** If any task touches more than ~3 files or introduces a new abstraction layer, flag it. Ask: "Is this complexity necessary for the MVP?"
 
-## Step 7: Execute or Fresh Start
+## Step 7: Hand Off Execution
 
 Once approved, ask the user:
-- Execute in this session?
+- Execute with `/skill:implement-plan` in this session?
 - Or start a fresh context? (Recommended if this session is heavy from discussion)
 
-When executing, tick each phase `- [x]` as you finish it (first unchecked = resume point); move the plan to `.scratch/plans/done/` when all phases are ticked.
+`implement-plan` owns execution, checks, commits, review cadence, progress ticks, and moving the finished plan.

@@ -19,9 +19,14 @@ Use this skill when you need to:
 
 ### Convert a URL or file to Markdown
 
-Run from **this skill folder** (the agent should `cd` here first):
+Run from **this skill folder**. Resolve local files to absolute paths before changing directories so they still point to the intended input:
 
 ```bash
+INPUT=/absolute/path/to/document.pdf
+cd /path/to/this/skill
+node to-markdown.mjs "$INPUT" --tmp
+
+# URLs can be passed directly
 uvx --python 3.12 --from 'markitdown[pdf]' markitdown <url-or-path>
 ```
 
@@ -56,4 +61,7 @@ node to-markdown.mjs <url-or-path> --summary --prompt "Focus on security implica
 This will:
 1) convert to Markdown via `uvx --python 3.12 --from 'markitdown[pdf]' markitdown`
 2) write the full Markdown to a temp `.md` file and print its path as a "Hint" line
-3) run `pi --model claude-haiku-4-5` (no-tools, no-session) to summarize using your extra prompt
+3) stream the converted Markdown to Pi over stdin, avoiding OS argument-length limits
+4) run `pi --model claude-haiku-4-5` with tools, extensions, skills, prompt templates, context files, and session persistence disabled so unrelated child resources do not affect a document-only summary
+
+For very long documents, the wrapper retains the full converted Markdown in the reported temp file but sends at most 140,000 characters (the beginning and end) to the summarizer and labels the truncation. Inspect or process the full temp file when omitted middle content matters.

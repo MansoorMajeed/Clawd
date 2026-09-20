@@ -12,9 +12,12 @@ This skill helps analyze coding agent sessions to improve or create skills. It w
 Extract the current session and generate an improvement prompt:
 
 ```bash
-# Auto-detect agent and extract current session
-./scripts/extract-session.js
+# Resolve this from the loaded skill location; keep the shell cwd at the project.
+EXTRACTOR=/absolute/path/to/improve-skill/scripts/extract-session.js
+node "$EXTRACTOR"
 ```
+
+Use the script's absolute path so cwd-based fallback discovery still refers to the project.
 
 ## Session Extraction
 
@@ -22,19 +25,21 @@ The `extract-session.js` script finds and parses session files from any of the t
 
 ```bash
 # Auto-detect (uses most recent session for current working directory)
-./scripts/extract-session.js
+node "$EXTRACTOR"
 
 # Specify agent type
-./scripts/extract-session.js --agent claude
-./scripts/extract-session.js --agent pi
-./scripts/extract-session.js --agent codex
+node "$EXTRACTOR" --agent claude
+node "$EXTRACTOR" --agent pi
+node "$EXTRACTOR" --agent codex
 
 # Specify a different working directory
-./scripts/extract-session.js --cwd /path/to/project
+node "$EXTRACTOR" --cwd /path/to/project
 
 # Use a specific session file
-./scripts/extract-session.js /path/to/session.jsonl
+node "$EXTRACTOR" --agent pi /path/to/session.jsonl
 ```
+
+Without arguments, the extractor uses the current `PI_SESSION_FILE` when available; otherwise it labels and selects the newest matching fallback across supported agents. An explicit path and `--agent` take precedence. Pi extraction follows the active branch and preserves tool calls, compaction summaries, and branch summaries.
 
 **Session file locations:**
 - **Claude Code**: `~/.claude/projects/<encoded-cwd>/*.jsonl`
@@ -47,13 +52,10 @@ When asked to improve a skill based on a session:
 
 1. **Extract the session transcript:**
    ```bash
-   ./scripts/extract-session.js > /tmp/session-transcript.txt
+   node "$EXTRACTOR" > /tmp/session-transcript.txt
    ```
 
-2. **Find the existing skill** in one of these locations:
-   - `~/.codex/skills/<skill-name>/SKILL.md`
-   - `~/.claude/skills/<skill-name>/SKILL.md`
-   - `~/.pi/agent/skills/<skill-name>/SKILL.md`
+2. **Find the existing skill's authoritative source.** Pi can load skills from `~/.pi/agent/skills/`, `~/.agents/skills/`, project `.pi/skills/` or `.agents/skills/`, package `skills/`/`pi.skills` paths, settings paths, and explicit `--skill` paths. Prefer the authoring checkout over an installer-managed package clone, which package reconciliation may reset. If several copies exist or the intended scope is unclear, ask before editing.
 
 3. **Generate an improvement prompt** for a new session:
 
@@ -93,10 +95,12 @@ When asked to create a new skill from a session:
 
 1. **Extract the session transcript:**
    ```bash
-   ./scripts/extract-session.js > /tmp/session-transcript.txt
+   node "$EXTRACTOR" > /tmp/session-transcript.txt
    ```
 
-2. **Generate a creation prompt** for a new session:
+2. **Choose the destination with the user.** Supported defaults are project-local `.pi/skills/<skill-name>/SKILL.md` (shared with the project), global `~/.pi/agent/skills/<skill-name>/SKILL.md` (personal), or `skills/<skill-name>/SKILL.md` while authoring a Pi package. Other discovered/settings locations are valid when the project already uses them. Do not default to a Codex directory for a Pi skill.
+
+3. **Generate a creation prompt** for a new session:
 
 ```
 ═══════════════════════════════════════════════════════════════════════════════
@@ -115,7 +119,7 @@ Create a new skill that captures:
 3. Common pitfalls and how to avoid them
 4. Example usage for typical scenarios
 
-Write the skill to: ~/.codex/skills/<skill-name>/SKILL.md
+Write the skill to: <agreed-supported-skill-path>/<skill-name>/SKILL.md
 
 Use this format:
 ---

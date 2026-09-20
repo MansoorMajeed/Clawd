@@ -16,6 +16,8 @@ This skill activates before any operation where:
 - A reboot or restart will activate staged changes
 - The change affects boot sequences, shared libraries, or init scripts
 
+Do not apply this heavyweight checklist to routine, reversible local refactors; use normal planning, tests, and version control for those.
+
 ## Core Principle: Evidence Before Action
 
 Never assume. Never skip verification. Never document success before confirming it.
@@ -110,17 +112,18 @@ After executing, verify the outcome **before** doing anything else:
 
 ### Triggering a Device Reboot with Staged Changes
 
-1. Verify staged files are correct (checksums, permissions, paths)
-2. Confirm the boot sequence will find and use the staged files
-3. Document what the device should do on next boot
-4. Confirm rollback: can staged files be removed if boot fails?
-5. Present summary to user, get confirmation
-6. Trigger reboot, monitor boot process if possible
-7. Verify device reaches expected state
+1. Verify the reboot mechanism and recovery path with no risky payload staged
+2. Stage the files, then verify checksums, permissions, and paths
+3. Confirm the boot sequence will find and use the staged files
+4. Document what the device should do on next boot
+5. Confirm rollback: can staged files be removed if boot fails?
+6. Present summary to user, get confirmation
+7. Trigger reboot, monitor boot process if possible
+8. Verify device reaches expected state
 
 ### Destructive Code Changes (Refactors, Migrations, Large Rewrites)
 
-1. Ensure working tree is clean: `git status` -- if dirty, commit or `git stash` first
+1. Inspect and preserve working-tree changes: `git status` -- if dirty, commit or `git stash` before switching branches; a backup branch protects commits, not uncommitted files
 2. Check for stashed work: `git stash list` -- note any stashes that could be affected
 3. Create a rollback branch: `git checkout -b pre-<action>-backup` then switch back
 4. Verify: `git log --oneline -5` to confirm the backup branch/commit exists

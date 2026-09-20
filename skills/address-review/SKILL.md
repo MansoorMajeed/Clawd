@@ -7,16 +7,16 @@ description: Read and address code review findings from .scratch/reviews/ for th
 
 ## Step 1: Find the review
 
-```bash
-git branch --show-current
-```
+If the user supplied a review path, use it. Otherwise derive the same filesystem-safe branch identifier used by the `review` skill:
 
-Look for the review file in `.scratch/reviews/`:
 ```bash
-ls .scratch/reviews/*-$(git branch --show-current).md 2>/dev/null
+BRANCH="$(git branch --show-current)"
+SAFE_BRANCH="$(printf '%s' "$BRANCH" | sed 's/[^A-Za-z0-9._-]/-/g')"
+ls -1t .scratch/reviews/*-"$SAFE_BRANCH".md 2>/dev/null
 ```
 
 If no review file exists, tell the user — there's nothing to address.
+If multiple reports match, ask which one to use rather than guessing. Timestamped names make same-day reviews distinct.
 
 ## Step 2: Read and summarize
 
@@ -32,17 +32,15 @@ Work through findings **in priority order** (P1 first, then P2, then P3).
 For each finding:
 1. Read the referenced code
 2. State whether you agree or disagree with the finding, and why
-3. If agreed: fix it, add a test if the fix is behavioral, run `make check`
-4. If disagreed: explain your reasoning to the user and ask for their call
+3. If agreed: for a non-trivial fix not already covered by an approved plan, present the proposed scope and get approval before editing; trivial reversible fixes can proceed directly
+4. Fix approved findings, writing a failing regression test first when behavior could regress, then run the project's check command (`make check` when present)
+5. If disagreed: explain your reasoning to the user and ask for their call
 
 Do NOT silently skip findings. Every finding gets a response.
 
 ## Step 4: Commit
 
-After all findings are addressed, commit the fixes:
-```
-fix: address review findings — <brief summary of what changed>
-```
+After all findings are addressed, use `/skill:commit` to make atomic commits by concern. Do not collapse unrelated findings into one catch-all commit.
 
 ## Step 5: Update the review file
 

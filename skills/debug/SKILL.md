@@ -38,9 +38,10 @@ Test it minimally — one change, one variable. Don't change multiple things at 
 
 ## Step 4: Fix
 
+- If the fix is non-trivial and not already covered by an approved plan, present the proposed change and get approval before editing. Trivial reversible fixes can proceed directly.
 - Fix the **root cause**, not the symptom.
 - Write a **regression test** — it must fail without the fix and pass with the fix.
-- Run `make check` — all tests must pass, not just the new one.
+- Run the project's actual check command (`make check` when present) — all tests must pass, not just the new one.
 - **Minimal diff** — fewest files, fewest lines. Don't refactor while debugging.
 
 ## Escalation

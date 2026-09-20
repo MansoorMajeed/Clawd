@@ -8,6 +8,12 @@ license: Stolen from Mario
 
 Minimal CDP tools for collaborative site exploration.
 
+## Prerequisites and targeting limits
+
+- The bundled launcher currently supports macOS Google Chrome and uses `open`; it is not a cross-platform Chromium launcher.
+- Install the nested script dependency from `scripts/` with `npm install` before first use if `ws` is unavailable. Package installation needs explicit approval because it may use the network.
+- The helpers select the last page target returned by CDP, not the focused tab. Keep exactly one eligible page open in the dedicated automation profile; if several page tabs exist, resolve that ambiguity before navigation, evaluation, screenshots, picking, or cookie actions.
+
 ## Start Chrome
 
 ```bash
@@ -26,7 +32,7 @@ automation profile when a site requires authentication.
 ./scripts/nav.js https://example.com --new
 ```
 
-Navigate current tab or open new tab.
+Navigate the selected page target or open a new tab. `Page.navigate` returning is not proof that the page loaded successfully. Before the next action, use `eval.js` to verify `location.href` and a bounded readiness condition such as `document.readyState`; do not chain a sensitive action immediately after `nav.js`.
 
 ## Evaluate JavaScript
 
@@ -61,11 +67,13 @@ Interactive element picker. Click to select, Cmd/Ctrl+Click for multi-select, En
 ./scripts/dismiss-cookies.js --reject # Reject cookies (where possible)
 ```
 
-Automatically dismisses EU cookie consent dialogs.
+Dismisses positively identified EU cookie consent dialogs. If no known consent UI is found, it returns without clicking rather than guessing from page-wide button text.
 
-Run after navigating to a page:
+Run only after navigation readiness has been verified:
 ```bash
-./scripts/nav.js https://example.com && ./scripts/dismiss-cookies.js
+./scripts/nav.js https://example.com
+./scripts/eval.js 'JSON.stringify({href: location.href, readyState: document.readyState})'
+./scripts/dismiss-cookies.js
 ```
 
 ## Background Logging (Console + Errors + Network)

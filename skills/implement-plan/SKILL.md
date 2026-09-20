@@ -31,33 +31,35 @@ State the mode in your first message — e.g. *"Implementing `<plan>` in **quick
 
 ## Step 3: Pre-flight
 
-- Confirm a feature branch exists. If on `main`, create `feat/<slug>`.
+- Read any branch scope recorded in the plan. Create or switch to that branch only when the approved plan calls for it; otherwise keep the current branch. Never overwrite or discard an unfamiliar dirty tree.
 - Confirm a clean working tree (or that pending changes belong to this plan).
+- Determine the project's actual check command from its instructions and build configuration; prefer `make check` when present.
+- Confirm the fresh-context reviewer dependency documented for this project (normally a loaded `subagent` tool) is available. If it is unavailable, stop before implementation and ask how to handle review; do not install it silently.
 
 ## Step 4: Implement phase by phase
 
 For each **unchecked** phase, in order:
 
-1. Implement it. Write tests first where the plan changes behavior (TDD); skip tests for scaffolding/config/docs.
-2. Run `make check` (or the project's check command).
+1. Implement it. When behavior could regress, write and observe a failing regression test first. For genuinely non-behavioral prose or static scaffolding, run applicable syntax, link, schema, build, or documentation validation instead; TypeScript, configuration, and Markdown are not blanket test exemptions.
+2. Run the project's check command.
 3. Tick the box `- [x]` and bump the status header (`phase N/M`).
-4. Commit atomically — one concern per commit, per the `commit` skill.
+4. Commit atomically — one concern per commit, per `/skill:commit`.
 
 ## Step 5: Review cadence (by mode)
 
 - **quick:** after all phases are ticked, run the reviewer **once**.
 - **deep:** after each phase, run the reviewer; loop implement → review → fix until clean before moving on.
 
-Run the reviewer as a fresh-context sub-agent so it doesn't mark its own homework (`review` skill). Use a headless `subagent`. Address findings with the `address-review` skill (P1 → P2 → P3, respond to every finding), then re-check.
+Run the reviewer as a fresh-context sub-agent so it doesn't mark its own homework (`/skill:review`). Use the preflighted headless `subagent`. Address findings with `/skill:address-review` (P1 → P2 → P3, respond to every finding), then re-check.
 
 ## Step 6: Finish
 
 When all boxes are ticked **and** review is clean:
 
-- Run `make check` one final time.
+- Run the project check command one final time.
 - Move the plan: `.scratch/plans/todo/<plan>.md` → `.scratch/plans/done/`.
 - Tell the user it's complete (the `notify` extension fires a desktop notification on turn end).
-- Offer `/ship` to create the PR.
+- Offer `/skill:ship` to create the PR.
 
 ## Resume protocol (after a context reset)
 
@@ -70,6 +72,6 @@ If you're unsure where you are:
 
 Stop and surface to the user — don't guess or expand scope — if:
 - The plan can't be found, or is ambiguous about which to run.
-- `make check` fails in a way the plan doesn't cover.
+- The project check command fails in a way the plan doesn't cover.
 - The review loop isn't converging (same finding ~3×).
 - A phase needs a decision the plan doesn't specify.
