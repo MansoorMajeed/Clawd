@@ -232,6 +232,99 @@ describe("token metadata and headers", () => {
 });
 
 describe("extension lifecycle", () => {
+  it("does not resolve credentials or fetch when no UI can display the status", async () => {
+    const handlers = new Map<string, (event: any, ctx: any) => void>();
+    const getApiKeyAndHeaders = vi.fn();
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    registerChatGptLimitStatus({
+      on: (name: string, handler: (event: any, ctx: any) => void) => handlers.set(name, handler),
+    } as any);
+
+    handlers.get("session_start")?.({}, {
+      model: { provider: "openai-codex", id: "gpt-5.5" },
+      hasUI: false,
+      modelRegistry: { getApiKeyAndHeaders },
+      ui: { setStatus: vi.fn() },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(getApiKeyAndHeaders).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("aborts in-flight work and discards queued refreshes on shutdown", async () => {
+    const handlers = new Map<string, (event: any, ctx: any) => void>();
+    const token = fakeJwt({
+      "https://api.openai.com/auth": { chatgpt_account_id: "acct_test" },
+    });
+    let resolveFetch!: (response: Response) => void;
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+      new Promise<Response>((resolve) => { resolveFetch = resolve; }),
+    );
+    const setStatus = vi.fn();
+    const ctx = {
+      model: { provider: "openai-codex", id: "gpt-5.5" },
+      hasUI: true,
+      modelRegistry: { getApiKeyAndHeaders: async () => ({ ok: true, apiKey: token }) },
+      ui: { setStatus, theme: { fg: (_color: string, text: string) => text } },
+    };
+    registerChatGptLimitStatus({
+      on: (name: string, handler: (event: any, ctx: any) => void) => handlers.set(name, handler),
+    } as any);
+
+    handlers.get("session_start")?.({}, ctx);
+    await waitFor(() => fetchMock.mock.calls.length === 1);
+    handlers.get("model_select")?.({ model: ctx.model }, ctx);
+    handlers.get("session_shutdown")?.({}, ctx);
+    resolveFetch(new Response(JSON.stringify({
+      rate_limit: {
+        primary_window: { used_percent: 25, limit_window_seconds: 18_000 },
+      },
+    })));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(setStatus).toHaveBeenLastCalledWith("chatgpt-limit-status", undefined);
+    expect(setStatus.mock.calls.filter(([, value]) => value !== undefined)).toHaveLength(0);
+  });
+
+  it("clears stale quota immediately when a model change supersedes in-flight work", async () => {
+    const handlers = new Map<string, (event: any, ctx: any) => void>();
+    const token = fakeJwt({
+      "https://api.openai.com/auth": { chatgpt_account_id: "acct_test" },
+    });
+    let resolveFetch!: (response: Response) => void;
+    vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+      new Promise<Response>((resolve) => { resolveFetch = resolve; }),
+    );
+    const setStatus = vi.fn();
+    const ctx = {
+      model: { provider: "openai-codex", id: "gpt-5.5" },
+      hasUI: true,
+      modelRegistry: { getApiKeyAndHeaders: async () => ({ ok: true, apiKey: token }) },
+      ui: { setStatus, theme: { fg: (_color: string, text: string) => text } },
+    };
+    registerChatGptLimitStatus({
+      on: (name: string, handler: (event: any, ctx: any) => void) => handlers.set(name, handler),
+    } as any);
+
+    handlers.get("session_start")?.({}, ctx);
+    await waitFor(() => typeof resolveFetch === "function");
+    setStatus.mockClear();
+    handlers.get("model_select")?.({ model: { provider: "anthropic", id: "claude" } }, ctx);
+
+    expect(setStatus).toHaveBeenCalledWith("chatgpt-limit-status", undefined);
+
+    resolveFetch(new Response(JSON.stringify({
+      rate_limit: {
+        primary_window: { used_percent: 25, limit_window_seconds: 18_000 },
+      },
+    })));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(setStatus.mock.calls.filter(([, value]) => value !== undefined)).toHaveLength(0);
+  });
+
   it.each(["agent_end", "session_shutdown"])(
     "refreshes every 30 seconds during a run and stops on %s",
     async (stopEvent) => {
@@ -288,7 +381,7 @@ describe("extension lifecycle", () => {
       handlers.get("agent_start")?.({}, ctx);
       handlers.get("agent_start")?.({}, ctx);
       await vi.advanceTimersByTimeAsync(30_000);
-      expect(fetchMock).toHaveBeenCalledTimes(stopEvent === "agent_end" ? 5 : 4);
+      expect(fetchMock).toHaveBeenCalledTimes(stopEvent === "agent_end" ? 5 : 3);
       handlers.get("session_shutdown")?.({}, ctx);
       expect(vi.getTimerCount()).toBe(0);
     },
