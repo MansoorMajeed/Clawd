@@ -23,7 +23,6 @@
     "@sinclair/typebox": "*"
   },
   "dependencies": {
-    "diff": "^8.0.2",
     "yaml": "^2.8.2"
   },
   "devDependencies": {
