@@ -21,6 +21,7 @@ function fakeJwt(payload: unknown): string {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 async function waitFor(predicate: () => boolean): Promise<void> {
@@ -231,6 +232,68 @@ describe("token metadata and headers", () => {
 });
 
 describe("extension lifecycle", () => {
+  it.each(["agent_end", "session_shutdown"])(
+    "refreshes every 30 seconds during a run and stops on %s",
+    async (stopEvent) => {
+      vi.useFakeTimers();
+      const handlers = new Map<string, (event: any, ctx: any) => void>();
+      const token = fakeJwt({
+        "https://api.openai.com/auth": { chatgpt_account_id: "acct_test" },
+      });
+      let usedPercent = 25;
+      const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+        new Response(JSON.stringify({
+          rate_limit: {
+            secondary_window: {
+              used_percent: usedPercent++,
+              limit_window_seconds: 604_800,
+            },
+          },
+        })),
+      );
+      const setStatus = vi.fn();
+      const ctx = {
+        model: { provider: "openai-codex", id: "gpt-5.5" },
+        hasUI: true,
+        modelRegistry: {
+          getApiKeyAndHeaders: async () => ({ ok: true, apiKey: token }),
+        },
+        ui: { setStatus, theme: { fg: (_color: string, text: string) => text } },
+      };
+      registerChatGptLimitStatus({
+        on: (name: string, handler: (event: any, ctx: any) => void) =>
+          handlers.set(name, handler),
+      } as any);
+
+      handlers.get("session_start")?.({}, ctx);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      handlers.get("agent_start")?.({}, ctx);
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(setStatus).toHaveBeenLastCalledWith("chatgpt-limit-status", "GPT W 74% ↺?");
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+
+      handlers.get(stopEvent)?.({}, ctx);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(fetchMock).toHaveBeenCalledTimes(stopEvent === "agent_end" ? 4 : 3);
+      if (stopEvent === "session_shutdown") {
+        expect(setStatus).toHaveBeenLastCalledWith("chatgpt-limit-status", undefined);
+      }
+
+      handlers.get("agent_start")?.({}, ctx);
+      handlers.get("agent_start")?.({}, ctx);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(fetchMock).toHaveBeenCalledTimes(stopEvent === "agent_end" ? 5 : 4);
+      handlers.get("session_shutdown")?.({}, ctx);
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
   it("uses event.model during model_select instead of a stale ctx.model", async () => {
     const handlers = new Map<string, (event: any, ctx: any) => void>();
     const token = fakeJwt({
