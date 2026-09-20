@@ -1,101 +1,117 @@
-import { describe, expect, it } from "vitest";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
-import {
-	createTokenTpsState,
-	estimateOutputTokens,
-	finalizeTokenTpsState,
-	finalOutputTokens,
-	recordGeneratedText,
-} from "../extensions/token-tps";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import registerTokenTps from "../extensions/token-tps";
 
-describe("estimateOutputTokens", () => {
-	it("estimates cumulatively instead of treating every stream chunk as a token", () => {
-		expect(estimateOutputTokens("")).toBe(0);
-		expect(estimateOutputTokens("a")).toBe(1);
-		expect(estimateOutputTokens("abcd")).toBe(1);
-		expect(estimateOutputTokens("abcde")).toBe(2);
-	});
-});
+function setup() {
+	const handlers = new Map<string, (event: any, ctx: any) => void>();
+	let nowMs = 0;
+	vi.spyOn(performance, "now").mockImplementation(() => nowMs);
+	const setStatus = vi.fn();
+	const ctx = {
+		hasUI: true,
+		ui: { setStatus, theme: { fg: (_color: string, text: string) => text } },
+	};
+	registerTokenTps({
+		on: (name: string, handler: (event: any, ctx: any) => void) => handlers.set(name, handler),
+	} as any);
+	const emit = (name: string, event = {}) => handlers.get(name)?.(event, ctx);
+	const finish = (output: number | undefined, stopReason = "stop", content: unknown[] = []) =>
+		emit("message_end", { message: { role: "assistant", usage: { output }, stopReason, content } });
+	return { emit, finish, setStatus, ctx, at: (time: number) => { nowMs = time; } };
+}
 
-describe("recordGeneratedText", () => {
-	it("computes current TPS from a rolling one-second window", () => {
-		let state = createTokenTpsState();
+afterEach(() => vi.restoreAllMocks());
 
-		state = recordGeneratedText(state, "a".repeat(40), 0);
-		expect(state.estimatedTokens).toBe(10);
-		expect(state.currentTps).toBe(10);
-		expect(state.peakTps).toBe(10);
-
-		state = recordGeneratedText(state, "a".repeat(20), 500);
-		expect(state.estimatedTokens).toBe(15);
-		expect(state.currentTps).toBe(15);
-		expect(state.peakTps).toBe(15);
-
-		state = recordGeneratedText(state, "a".repeat(4), 1501);
-		expect(state.estimatedTokens).toBe(16);
-		expect(state.currentTps).toBe(1);
-		expect(state.peakTps).toBe(15);
+describe("provider-reported TPS", () => {
+	it("includes initial waiting time and uses provider counts rather than streamed characters", () => {
+		const h = setup();
+		h.emit("session_start");
+		h.emit("before_provider_request");
+		h.at(1000);
+		h.emit("message_start", { message: { role: "assistant" } });
+		h.emit("message_update", { assistantMessageEvent: { type: "text_delta", delta: "hello" } });
+		h.at(2000);
+		h.finish(100);
+		expect(h.setStatus).toHaveBeenLastCalledWith("token-tps", "Last 50.0 · Avg 50.0 tok/s");
 	});
 
-	it("uses elapsed generation time for average TPS", () => {
-		let state = createTokenTpsState();
-		state = recordGeneratedText(state, "a".repeat(40), 1000);
-		state = recordGeneratedText(state, "a".repeat(40), 2000);
-
-		expect(state.estimatedTokens).toBe(20);
-		expect(state.averageTps).toBe(20);
-	});
-});
-
-describe("finalizeTokenTpsState", () => {
-	it("freezes current TPS and corrects final values when usage is available", () => {
-		let state = createTokenTpsState();
-		state = recordGeneratedText(state, "a".repeat(40), 1000);
-		state = recordGeneratedText(state, "a".repeat(40), 2000);
-
-		const finalized = finalizeTokenTpsState(state, 3000, 30);
-
-		expect(finalized.active).toBe(false);
-		expect(finalized.estimatedTokens).toBe(30);
-		expect(finalized.currentTps).toBe(30);
-		expect(finalized.peakTps).toBe(30);
-		expect(finalized.averageTps).toBe(15);
-	});
-});
-
-describe("finalOutputTokens", () => {
-	const baseMessage = {
-		role: "assistant",
-		api: "anthropic-messages",
-		provider: "anthropic",
-		model: "claude",
-		stopReason: "stop",
-		timestamp: 0,
-		usage: {
-			input: 0,
-			output: 12,
-			cacheRead: 0,
-			cacheWrite: 0,
-			totalTokens: 12,
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-		},
-	} satisfies Omit<AssistantMessage, "content">;
-
-	it("uses provider output tokens for text-only assistant messages", () => {
-		const message = {
-			...baseMessage,
-			content: [{ type: "text", text: "hello" }],
-		} satisfies AssistantMessage;
-
-		expect(finalOutputTokens(message)).toBe(12);
+	it("weights session average by response duration and excludes tool execution and idle time", () => {
+		const h = setup();
+		h.emit("before_provider_request");
+		h.at(2000);
+		h.finish(100, "toolUse", [{ type: "toolCall", arguments: { path: "x" } }]);
+		expect(h.setStatus).toHaveBeenLastCalledWith("token-tps", "Last 50.0 · Avg 50.0 tok/s");
+		h.at(60_000);
+		h.emit("message_end", { message: { role: "toolResult" } });
+		h.emit("before_provider_request");
+		h.at(61_000);
+		h.finish(100);
+		expect(h.setStatus).toHaveBeenLastCalledWith("token-tps", "Last 100.0 · Avg 66.7 tok/s");
 	});
 
-	it("does not correct from final usage when tool-call JSON contributed to output tokens", () => {
-		const message = {
-			...baseMessage,
-			content: [{ type: "toolCall", id: "1", name: "read", arguments: { path: "x" } }],
-		} satisfies AssistantMessage;
+	it("keeps completed values visible while streaming and counts completion only once", () => {
+		const h = setup();
+		h.emit("before_provider_request");
+		h.at(1000);
+		h.finish(20);
+		h.setStatus.mockClear();
+		h.emit("before_provider_request");
+		h.emit("message_start", { message: { role: "assistant" } });
+		h.at(2000);
+		h.emit("message_update", { assistantMessageEvent: { type: "thinking_delta", delta: "thinking" } });
+		h.emit("message_update", { assistantMessageEvent: { type: "done", message: { usage: { output: 80 } } } });
+		expect(h.setStatus).not.toHaveBeenCalled();
+		h.at(3000);
+		h.finish(80);
+		h.finish(80);
+		expect(h.setStatus).toHaveBeenCalledTimes(1);
+		expect(h.setStatus).toHaveBeenLastCalledWith("token-tps", "Last 40.0 · Avg 33.3 tok/s");
+	});
 
-		expect(finalOutputTokens(message)).toBeUndefined();
+	it.each([undefined, 0, -1, NaN, Infinity])("skips unusable output count %s without adding its duration", (output) => {
+		const h = setup();
+		h.emit("before_provider_request");
+		h.at(5000);
+		h.finish(output);
+		expect(h.setStatus).not.toHaveBeenCalled();
+		h.emit("before_provider_request");
+		h.at(6000);
+		h.finish(30);
+		expect(h.setStatus).toHaveBeenLastCalledWith("token-tps", "Last 30.0 · Avg 30.0 tok/s");
+	});
+
+	it.each(["error", "aborted"])("excludes %s responses", (reason) => {
+		const h = setup();
+		h.emit("before_provider_request");
+		h.at(1000);
+		h.finish(100, reason);
+		expect(h.setStatus).not.toHaveBeenCalled();
+	});
+
+	it("ignores untimed completions and zero-duration responses", () => {
+		const h = setup();
+		h.finish(100);
+		h.emit("before_provider_request");
+		h.finish(100);
+		expect(h.setStatus).not.toHaveBeenCalled();
+	});
+
+	it("resets totals and pending timing on session start and clears status on shutdown", () => {
+		const h = setup();
+		h.emit("before_provider_request");
+		h.at(1000);
+		h.finish(100);
+		h.emit("before_provider_request");
+		h.emit("session_start");
+		expect(h.setStatus).toHaveBeenLastCalledWith("token-tps", undefined);
+		h.setStatus.mockClear();
+		h.at(2000);
+		h.finish(100);
+		expect(h.setStatus).not.toHaveBeenCalled();
+		h.emit("before_provider_request");
+		h.at(3000);
+		h.finish(20);
+		expect(h.setStatus).toHaveBeenLastCalledWith("token-tps", "Last 20.0 · Avg 20.0 tok/s");
+		h.emit("session_shutdown");
+		expect(h.setStatus).toHaveBeenLastCalledWith("token-tps", undefined);
 	});
 });

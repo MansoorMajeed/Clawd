@@ -1,191 +1,45 @@
-import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-export type TokenTpsSample = {
-	atMs: number;
-	tokens: number;
-};
-
-export type TokenTpsState = {
-	active: boolean;
-	startedAtMs: number | undefined;
-	lastUpdatedAtMs: number | undefined;
-	generatedText: string;
-	estimatedTokens: number;
-	samples: TokenTpsSample[];
-	currentTps: number;
-	peakTps: number;
-	averageTps: number;
-};
-
 const STATUS_KEY = "token-tps";
-const WINDOW_MS = 1000;
-const MIN_ELAPSED_MS = 250;
-
-export function estimateOutputTokens(text: string): number {
-	if (text.length === 0) return 0;
-	return Math.max(1, Math.ceil(text.length / 4));
-}
-
-export function createTokenTpsState(): TokenTpsState {
-	return {
-		active: false,
-		startedAtMs: undefined,
-		lastUpdatedAtMs: undefined,
-		generatedText: "",
-		estimatedTokens: 0,
-		samples: [],
-		currentTps: 0,
-		peakTps: 0,
-		averageTps: 0,
-	};
-}
-
-export function recordGeneratedText(
-	state: TokenTpsState,
-	delta: string,
-	nowMs: number,
-	windowMs = WINDOW_MS,
-): TokenTpsState {
-	const generatedText = state.generatedText + delta;
-	const estimatedTokens = estimateOutputTokens(generatedText);
-	const tokenDelta = Math.max(0, estimatedTokens - state.estimatedTokens);
-	const startedAtMs = state.startedAtMs ?? (tokenDelta > 0 ? nowMs : undefined);
-	const samples = pruneSamples(
-		tokenDelta > 0 ? [...state.samples, { atMs: nowMs, tokens: tokenDelta }] : state.samples,
-		nowMs,
-		windowMs,
-	);
-	const currentTps = sumTokens(samples) / (windowMs / 1000);
-	const averageTps = averageTokensPerSecond(estimatedTokens, startedAtMs, nowMs);
-
-	return {
-		active: true,
-		startedAtMs,
-		lastUpdatedAtMs: nowMs,
-		generatedText,
-		estimatedTokens,
-		samples,
-		currentTps,
-		peakTps: Math.max(state.peakTps, currentTps),
-		averageTps,
-	};
-}
-
-export function finalizeTokenTpsState(
-	state: TokenTpsState,
-	nowMs: number,
-	actualOutputTokens?: number,
-): TokenTpsState {
-	const elapsedAverage = averageTokensPerSecond(state.estimatedTokens, state.startedAtMs, nowMs);
-	const finalized = {
-		...state,
-		active: false,
-		lastUpdatedAtMs: nowMs,
-		averageTps: elapsedAverage,
-	};
-
-	if (!actualOutputTokens || actualOutputTokens <= 0 || state.estimatedTokens <= 0) {
-		return finalized;
-	}
-
-	const scale = actualOutputTokens / state.estimatedTokens;
-	return {
-		...finalized,
-		estimatedTokens: actualOutputTokens,
-		currentTps: finalized.currentTps * scale,
-		peakTps: finalized.peakTps * scale,
-		averageTps: averageTokensPerSecond(actualOutputTokens, state.startedAtMs, nowMs),
-	};
-}
-
-export function finalOutputTokens(message: AssistantMessage): number | undefined {
-	if (message.content.some((block) => block.type === "toolCall")) return undefined;
-	const output = Number(message.usage?.output ?? 0);
-	return Number.isFinite(output) && output > 0 ? output : undefined;
-}
-
-function pruneSamples(samples: TokenTpsSample[], nowMs: number, windowMs: number): TokenTpsSample[] {
-	const cutoff = nowMs - windowMs;
-	return samples.filter((sample) => sample.atMs >= cutoff);
-}
-
-function sumTokens(samples: TokenTpsSample[]): number {
-	return samples.reduce((total, sample) => total + sample.tokens, 0);
-}
-
-function averageTokensPerSecond(tokens: number, startedAtMs: number | undefined, nowMs: number): number {
-	if (startedAtMs === undefined || tokens <= 0) return 0;
-	const elapsedMs = Math.max(MIN_ELAPSED_MS, nowMs - startedAtMs);
-	return tokens / (elapsedMs / 1000);
-}
-
-function formatNumber(value: number): string {
-	if (!Number.isFinite(value) || value < 0) return "0.0";
-	return value.toFixed(1);
-}
-
-function formatStatus(state: TokenTpsState, ctx: ExtensionContext): string {
-	const theme = ctx.ui.theme;
-	const current = formatNumber(state.currentTps);
-	const peak = formatNumber(state.peakTps);
-	const average = formatNumber(state.averageTps);
-
-	if (state.active) {
-		return [
-			theme.fg("accent", `● ${current} tps`),
-			theme.fg("warning", `↑${peak}`),
-			theme.fg("muted", `⌀${average}`),
-		].join(" ");
-	}
-
-	return theme.fg("dim", `${current} tps ↑${peak} ⌀${average}`);
-}
-
-function updateStatus(ctx: ExtensionContext, state: TokenTpsState | undefined): void {
-	if (!ctx.hasUI || !state || state.estimatedTokens <= 0) return;
-	ctx.ui.setStatus(STATUS_KEY, formatStatus(state, ctx));
-}
 
 export default function (pi: ExtensionAPI) {
-	let state: TokenTpsState | undefined;
+	let startedAtMs: number | undefined;
+	let totalOutputTokens = 0;
+	let totalResponseMs = 0;
 
-	const reset = () => {
-		state = createTokenTpsState();
+	const reset = (ctx: ExtensionContext) => {
+		startedAtMs = undefined;
+		totalOutputTokens = 0;
+		totalResponseMs = 0;
+		if (ctx.hasUI) ctx.ui.setStatus(STATUS_KEY, undefined);
 	};
 
-	const finalize = (ctx: ExtensionContext, message?: AssistantMessage) => {
-		if (!state || state.estimatedTokens <= 0) return;
-		state = finalizeTokenTpsState(state, Date.now(), message ? finalOutputTokens(message) : undefined);
-		updateStatus(ctx, state);
-	};
+	pi.on("session_start", (_event, ctx) => reset(ctx));
+	pi.on("session_shutdown", (_event, ctx) => reset(ctx));
 
-	pi.on("message_start", (event) => {
-		if (event.message.role === "assistant") reset();
-	});
-
-	pi.on("message_update", (event, ctx) => {
-		const streamEvent = event.assistantMessageEvent;
-
-		if (streamEvent.type === "text_delta" || streamEvent.type === "thinking_delta") {
-			state ??= createTokenTpsState();
-			state = recordGeneratedText(state, streamEvent.delta, Date.now());
-			updateStatus(ctx, state);
-			return;
-		}
-
-		if (streamEvent.type === "done") {
-			finalize(ctx, streamEvent.message);
-		} else if (streamEvent.type === "error") {
-			finalize(ctx, streamEvent.error);
-		}
+	pi.on("before_provider_request", () => {
+		startedAtMs = performance.now();
 	});
 
 	pi.on("message_end", (event, ctx) => {
-		if (event.message.role === "assistant") finalize(ctx, event.message as AssistantMessage);
-	});
+		if (event.message.role !== "assistant" || startedAtMs === undefined) return;
+		const elapsedMs = performance.now() - startedAtMs;
+		startedAtMs = undefined;
 
-	pi.on("session_shutdown", (_event, ctx) => {
-		if (ctx.hasUI) ctx.ui.setStatus(STATUS_KEY, undefined);
+		const message = event.message;
+		const outputTokens = message.usage?.output;
+		if (
+			message.stopReason === "error" || message.stopReason === "aborted" ||
+			typeof outputTokens !== "number" || !Number.isFinite(outputTokens) ||
+			outputTokens <= 0 || elapsedMs <= 0
+		) return;
+
+		totalOutputTokens += outputTokens;
+		totalResponseMs += elapsedMs;
+		const last = (outputTokens * 1000 / elapsedMs).toFixed(1);
+		const average = (totalOutputTokens * 1000 / totalResponseMs).toFixed(1);
+		if (ctx.hasUI) {
+			ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg("dim", `Last ${last} · Avg ${average} tok/s`));
+		}
 	});
 }
