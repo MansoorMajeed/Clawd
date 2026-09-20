@@ -8,7 +8,7 @@
  * Priority: zellij > tmux > Herdr > Ghostty (AppleScript, macOS only)
  */
 
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { SessionManager, type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { existsSync, promises as fs } from "node:fs";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -87,6 +87,12 @@ async function createForkedSession(ctx: ExtensionCommandContext): Promise<string
 	}
 
 	const sessionDir = path.dirname(sessionFile);
+	const leafId = ctx.sessionManager.getLeafId();
+	if (leafId && existsSync(sessionFile)) {
+		const sourceSession = SessionManager.open(sessionFile, sessionDir);
+		return sourceSession.createBranchedSession(leafId);
+	}
+
 	const branchEntries = ctx.sessionManager.getBranch();
 	const currentHeader = ctx.sessionManager.getHeader();
 
