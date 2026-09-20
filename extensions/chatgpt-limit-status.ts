@@ -325,10 +325,27 @@ export default function (pi: ExtensionAPI) {
     },
   );
 
+  let refreshTimer: ReturnType<typeof setInterval> | undefined;
+  const stopPolling = () => {
+    if (refreshTimer !== undefined) clearInterval(refreshTimer);
+    refreshTimer = undefined;
+  };
+
+  pi.on("agent_start", (_event, ctx) => {
+    stopPolling();
+    refreshTimer = setInterval(() => queueUpdate({ ctx }), 30_000);
+    refreshTimer.unref();
+  });
   pi.on("session_start", (_event, ctx) => queueUpdate({ ctx }));
   pi.on("model_select", (event, ctx) =>
     queueUpdate({ ctx, model: event.model }),
   );
-  pi.on("agent_end", (_event, ctx) => queueUpdate({ ctx }));
-  pi.on("session_shutdown", (_event, ctx) => clearStatus(ctx));
+  pi.on("agent_end", (_event, ctx) => {
+    stopPolling();
+    queueUpdate({ ctx });
+  });
+  pi.on("session_shutdown", (_event, ctx) => {
+    stopPolling();
+    clearStatus(ctx);
+  });
 }
