@@ -1785,8 +1785,15 @@ export default function reviewExtension(pi: ExtensionAPI) {
 				}
 			}
 
-			// If no args or invalid args, show selector
+			// If no args or invalid args, show selector in the TUI.
 			if (!target) {
+				if (ctx.mode !== "tui") {
+					ctx.ui.notify(
+						"Review selection requires interactive mode; pass a review target explicitly in RPC mode.",
+						"error",
+					);
+					return;
+				}
 				fromSelector = true;
 			}
 
@@ -1939,7 +1946,7 @@ Instructions:
 		originId: string,
 		showLoader: boolean,
 	): Promise<{ cancelled: boolean; error?: string } | null> {
-		if (showLoader && ctx.hasUI) {
+		if (showLoader && ctx.mode === "tui") {
 			return ctx.ui.custom<{ cancelled: boolean; error?: string } | null>((tui, theme, _kb, done) => {
 				const loader = new BorderedLoader(tui, theme, "Returning and summarizing review branch...");
 				loader.onAbort = () => done(null);
