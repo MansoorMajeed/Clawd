@@ -132,6 +132,13 @@ describe("readable footer", () => {
 		expect(SettingsManager.create).toHaveBeenLastCalledWith(h.ctx.cwd, undefined, { projectTrusted: false });
 	});
 
+	it("refreshes compaction settings during rendering without waiting for another event", () => {
+		const h = setup();
+		expect(h.plain()[1]).not.toContain("auto off");
+		h.settings.enabled = false;
+		expect(h.plain()[1]).toContain("auto off");
+	});
+
 	it("updates model, thinking, branch, session name and theme without a restart", () => {
 		const h = setup();
 		h.ctx.model = { id: "other-model", contextWindow: 128_000, reasoning: true };
