@@ -366,6 +366,16 @@ describe("extractRmInvocations", () => {
 	it("does not parse rm outside command-head position", () => {
 		expect(extractRmInvocations("find . | xargs rm -rf")).toEqual([]);
 	});
+
+	it("marks rm targets after a cwd-changing segment as having unknown effective cwd", () => {
+		expect(extractRmInvocations("cd /outside && rm -rf child")).toEqual([
+			{
+				targets: [{ raw: "child", resolvePath: "child", literal: true }],
+				complete: true,
+				cwdKnown: false,
+			},
+		]);
+	});
 });
 
 describe("decideRmAction", () => {
@@ -394,6 +404,15 @@ describe("decideRmAction", () => {
 
 	it("prompts for unresolved targets", () => {
 		expect(decideRmAction([{ raw: "$DIR", resolvedPath: null }], ctx).action).toBe("prompt");
+	});
+
+	it("checks every target for .git before returning a weaker prompt decision", () => {
+		const outside = { raw: "/etc/x", resolvedPath: "/etc/x" };
+		const git = { raw: "/work/project/.git", resolvedPath: "/work/project/.git" };
+
+		expect(decideRmAction([outside, git], ctx).action).toBe("block");
+		expect(decideRmAction([git, outside], ctx).action).toBe("block");
+		expect(decideRmAction([{ raw: "$DIR", resolvedPath: null }, git], ctx).action).toBe("block");
 	});
 
 	it("does not derive delete permission from broad scopes", () => {
@@ -751,30 +770,21 @@ describe("extractPaths", () => {
 		expect(extractPaths("write", { path: "/foo/bar.ts", content: "hello" })).toEqual(["/foo/bar.ts"]);
 	});
 
-	it("extracts path from single edit", () => {
-		expect(extractPaths("edit", { path: "/foo/bar.ts", oldText: "a", newText: "b" })).toEqual(["/foo/bar.ts"]);
+	it("extracts the single native edit path for an edits array", () => {
+		expect(
+			extractPaths("edit", {
+				path: "/foo/bar.ts",
+				edits: [
+					{ oldText: "a", newText: "b" },
+					{ oldText: "c", newText: "d" },
+				],
+			}),
+		).toEqual(["/foo/bar.ts"]);
 	});
 
-	it("extracts paths from multi edit", () => {
-		const input = {
-			multi: [
-				{ path: "/foo/a.ts", oldText: "a", newText: "b" },
-				{ path: "/foo/b.ts", oldText: "c", newText: "d" },
-			],
-		};
-		expect(extractPaths("edit", input)).toEqual(["/foo/a.ts", "/foo/b.ts"]);
-	});
-
-	it("extracts paths from patch", () => {
-		const patch = `*** Begin Patch
-*** /foo/a.ts
-- old line
-+ new line
-*** /foo/b.ts
-- another old
-+ another new
-*** End Patch`;
-		expect(extractPaths("edit", { patch })).toEqual(["/foo/a.ts", "/foo/b.ts"]);
+	it("does not authorize removed multi or patch edit inputs", () => {
+		expect(extractPaths("edit", { multi: [{ path: "/foo/a.ts" }] })).toEqual([]);
+		expect(extractPaths("edit", { patch: "*** Update File: /foo/a.ts" })).toEqual([]);
 	});
 
 	it("returns empty for bash tool", () => {
@@ -785,22 +795,7 @@ describe("extractPaths", () => {
 		expect(extractPaths("some_mcp_tool", { whatever: true })).toEqual([]);
 	});
 
-	it("handles edit with no path (patch-only)", () => {
-		const patch = `*** Begin Patch
-*** /foo/a.ts
-- old
-+ new
-*** End Patch`;
-		expect(extractPaths("edit", { patch })).toEqual(["/foo/a.ts"]);
-	});
-
-	it("deduplicates paths in multi edit", () => {
-		const input = {
-			multi: [
-				{ path: "/foo/a.ts", oldText: "a", newText: "b" },
-				{ path: "/foo/a.ts", oldText: "c", newText: "d" },
-			],
-		};
-		expect(extractPaths("edit", input)).toEqual(["/foo/a.ts"]);
+	it("returns empty for a native edit without a path", () => {
+		expect(extractPaths("edit", { edits: [{ oldText: "a", newText: "b" }] })).toEqual([]);
 	});
 });

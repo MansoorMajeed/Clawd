@@ -19,6 +19,7 @@ import {
 	decideRmAction,
 	extractRmInvocations,
 	extractPaths,
+	resolveToolPath,
 	toolMode,
 	type AccessMode,
 } from "./permissions.js";
@@ -37,6 +38,8 @@ interface NormalizedPermissionsConfig {
 
 interface PermissionGuardContext {
 	cwd: string;
+	mode: "tui" | "rpc" | "json" | "print";
+	isProjectTrusted(): boolean;
 	ui: {
 		select(title: string, choices: string[]): Promise<string | null | undefined>;
 		input?(title: string, placeholder?: string): Promise<string | undefined>;
@@ -75,19 +78,8 @@ async function loadConfig(path: string): Promise<PermissionsConfig> {
 	return JSON.parse(raw);
 }
 
-function expandTilde(p: string): string {
-	if (p === "~") {
-		return process.env.HOME || "";
-	}
-	if (p.startsWith("~/")) {
-		return resolve(process.env.HOME || "", p.slice(2));
-	}
-	return p;
-}
-
 async function resolvePath(p: string, cwd: string): Promise<string> {
-	const expanded = expandTilde(p);
-	const absolute = resolve(cwd, expanded);
+	const absolute = resolveToolPath(p, cwd);
 	const missingParts: string[] = [];
 	let current = absolute;
 
@@ -105,7 +97,7 @@ async function resolvePath(p: string, cwd: string): Promise<string> {
 }
 
 async function nearestExistingDir(rawPath: string, cwd: string): Promise<string> {
-	let current = resolve(cwd, expandTilde(rawPath));
+	let current = resolveToolPath(rawPath, cwd);
 	while (true) {
 		try {
 			const info = await stat(current);
@@ -244,7 +236,7 @@ async function promptPermissionScope(
 	];
 	const title = `${mode === "read" ? "Read" : "Read-write"} permission required: ${toolName} ${rawPath}`;
 
-	if (!ctx.ui.custom) {
+	if (ctx.mode !== "tui" || !ctx.ui.custom) {
 		const choice = await ctx.ui.select(title, items.map((item) => item.label));
 		return items.find((item) => item.label === choice)?.result ?? null;
 	}
@@ -365,8 +357,6 @@ async function removeResolvedPath(paths: string[], rawPath: string, cwd: string)
 }
 
 export default function (pi: ExtensionAPI) {
-	const yoloMode = pi.getFlag("--yolo") === true;
-
 	let readPaths: string[] = [];
 	let readWritePaths: string[] = [];
 	let projectConfigPath = "";
@@ -442,7 +432,7 @@ export default function (pi: ExtensionAPI) {
 		projectConfigPath = resolve(cwd, ".pi/permissions.json");
 		globalConfigPath = resolve(process.env.HOME || "", ".pi/agent/permissions.json");
 
-		projectConfig = await loadConfig(projectConfigPath);
+		projectConfig = ctx.isProjectTrusted() ? await loadConfig(projectConfigPath) : {};
 		globalConfig = await loadConfig(globalConfigPath);
 
 		readPaths = [];
@@ -453,7 +443,7 @@ export default function (pi: ExtensionAPI) {
 
 	// Register --yolo flag
 	pi.registerFlag("yolo", {
-		description: "Skip permission prompts (hard blocks still enforced)",
+		description: "Skip permission prompts (hard blocks and unresolved-cwd recursive deletes still blocked)",
 		type: "boolean",
 		default: false,
 	});
@@ -508,6 +498,8 @@ export default function (pi: ExtensionAPI) {
 
 	// Main permission gate
 	pi.on("tool_call", async (event, ctx) => {
+		const yoloMode = pi.getFlag("yolo") === true;
+
 		// ── Bash commands: check hard blocks and dangerous patterns ──
 		if (event.toolName === "bash") {
 			const command = (event.input as { command?: string })?.command;
@@ -536,12 +528,19 @@ export default function (pi: ExtensionAPI) {
 			const rmInvocations = extractRmInvocations(command);
 			let rmPromptTarget: string | undefined;
 			for (const invocation of rmInvocations) {
-				if (!invocation.complete) continue;
-
 				const targets = await Promise.all(
 					invocation.targets.map(async (target) => ({
 						raw: target.raw,
-						resolvedPath: target.literal ? await resolvePath(target.resolvePath, ctx.cwd) : null,
+						resolvedPath:
+							target.literal &&
+							invocation.complete &&
+							(invocation.cwdKnown !== false ||
+								isAbsolute(target.resolvePath) ||
+								target.resolvePath === "~" ||
+								target.resolvePath.startsWith("~/") ||
+								target.resolvePath.split(/[\\/]/).includes(".git"))
+								? await resolvePath(target.resolvePath, ctx.cwd)
+								: null,
 					})),
 				);
 				const decision = decideRmAction(targets, {
@@ -554,6 +553,16 @@ export default function (pi: ExtensionAPI) {
 					return {
 						block: true,
 						reason: `HARD BLOCKED: Delete .git path (${decision.target}). This action is never allowed.`,
+					};
+				}
+				// Normal mode can show the full command for explicit approval. Under --yolo,
+				// unresolved relative targets after a cwd change must fail closed instead.
+				if (yoloMode && invocation.cwdKnown === false && targets.some((target) => !target.resolvedPath)) {
+					return {
+						block: true,
+						reason:
+							`HARD BLOCKED: Recursive rm target cannot be resolved after a cwd-changing command ` +
+							`under --yolo (${decision.target ?? "unknown target"}).`,
 					};
 				}
 				if (decision.action === "prompt") rmPromptTarget ??= decision.target ?? "unknown target";

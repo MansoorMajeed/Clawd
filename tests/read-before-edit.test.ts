@@ -1,4 +1,5 @@
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
 	findUnreadEditPath,
@@ -23,30 +24,22 @@ describe("read-before-edit path tracking", () => {
 		);
 	});
 
-	it("blocks an unread complete top-level edit combined with multi-edit", () => {
-		const seenFiles = recordSeenFile(new Set(), cwd, "extensions/seen.ts");
+	it("normalizes the leading @ prefix like the native edit tool", () => {
+		const file = path.join(cwd, "extensions/foo.ts");
+		const seenFiles = recordSeenFile(new Set(), cwd, "extensions/foo.ts");
 
-		expect(
-			findUnreadEditPath(seenFiles, cwd, {
-				path: "extensions/unread.ts",
-				oldText: "before",
-				newText: "after",
-				multi: [{ path: "extensions/seen.ts" }],
-			}),
-		).toBe("extensions/unread.ts");
+		expect(findUnreadEditPath(seenFiles, cwd, { path: `@${file}`, edits: [] })).toBeUndefined();
 	});
 
-	it("blocks the first unseen path in a mixed multi-edit", () => {
-		const seenFiles = recordSeenFile(new Set(), cwd, "extensions/seen.ts");
+	it("normalizes file URLs and Unicode spaces like native file tools", () => {
+		const seenFiles = recordSeenFile(new Set(), cwd, "extensions/foo bar.ts");
 
 		expect(
 			findUnreadEditPath(seenFiles, cwd, {
-				multi: [
-					{ path: "./extensions/seen.ts" },
-					{ path: path.join(cwd, "extensions/unseen.ts") },
-				],
+				path: pathToFileURL(path.join(cwd, "extensions/foo bar.ts")).href,
 			}),
-		).toBe(path.join(cwd, "extensions/unseen.ts"));
+		).toBeUndefined();
+		expect(findUnreadEditPath(seenFiles, cwd, { path: "extensions/foo\u202fbar.ts" })).toBeUndefined();
 	});
 
 	it("blocks a previously seen file after reset", () => {
