@@ -31,7 +31,7 @@ describe("provider-reported TPS", () => {
 		h.emit("message_update", { assistantMessageEvent: { type: "text_delta", delta: "hello" } });
 		h.at(2000);
 		h.finish(100);
-		expect(h.setStatus).toHaveBeenLastCalledWith("token-tps", "Last 50.0 · Avg 50.0 tok/s");
+		expect(h.setStatus).toHaveBeenLastCalledWith("token-tps", "Speed 50.0 tok/s · avg 50.0 tok/s");
 	});
 
 	it("weights session average by response duration and excludes tool execution and idle time", () => {
@@ -39,13 +39,13 @@ describe("provider-reported TPS", () => {
 		h.emit("before_provider_request");
 		h.at(2000);
 		h.finish(100, "toolUse", [{ type: "toolCall", arguments: { path: "x" } }]);
-		expect(h.setStatus).toHaveBeenLastCalledWith("token-tps", "Last 50.0 · Avg 50.0 tok/s");
+		expect(h.setStatus).toHaveBeenLastCalledWith("token-tps", "Speed 50.0 tok/s · avg 50.0 tok/s");
 		h.at(60_000);
 		h.emit("message_end", { message: { role: "toolResult" } });
 		h.emit("before_provider_request");
 		h.at(61_000);
 		h.finish(100);
-		expect(h.setStatus).toHaveBeenLastCalledWith("token-tps", "Last 100.0 · Avg 66.7 tok/s");
+		expect(h.setStatus).toHaveBeenLastCalledWith("token-tps", "Speed 100.0 tok/s · avg 66.7 tok/s");
 	});
 
 	it("keeps completed values visible while streaming and counts completion only once", () => {
@@ -64,7 +64,7 @@ describe("provider-reported TPS", () => {
 		h.finish(80);
 		h.finish(80);
 		expect(h.setStatus).toHaveBeenCalledTimes(1);
-		expect(h.setStatus).toHaveBeenLastCalledWith("token-tps", "Last 40.0 · Avg 33.3 tok/s");
+		expect(h.setStatus).toHaveBeenLastCalledWith("token-tps", "Speed 40.0 tok/s · avg 33.3 tok/s");
 	});
 
 	it.each([undefined, 0, -1, NaN, Infinity])("skips unusable output count %s without adding its duration", (output) => {
@@ -76,7 +76,7 @@ describe("provider-reported TPS", () => {
 		h.emit("before_provider_request");
 		h.at(6000);
 		h.finish(30);
-		expect(h.setStatus).toHaveBeenLastCalledWith("token-tps", "Last 30.0 · Avg 30.0 tok/s");
+		expect(h.setStatus).toHaveBeenLastCalledWith("token-tps", "Speed 30.0 tok/s · avg 30.0 tok/s");
 	});
 
 	it.each(["error", "aborted"])("excludes %s responses", (reason) => {
@@ -110,7 +110,7 @@ describe("provider-reported TPS", () => {
 		h.emit("before_provider_request");
 		h.at(3000);
 		h.finish(20);
-		expect(h.setStatus).toHaveBeenLastCalledWith("token-tps", "Last 20.0 · Avg 20.0 tok/s");
+		expect(h.setStatus).toHaveBeenLastCalledWith("token-tps", "Speed 20.0 tok/s · avg 20.0 tok/s");
 		h.emit("session_shutdown");
 		expect(h.setStatus).toHaveBeenLastCalledWith("token-tps", undefined);
 	});

@@ -18,6 +18,9 @@ Custom Pi coding agent package — lean system prompt, opinionated workflow. Inc
   - `review.ts` — Code review command supporting PR/branch/commit/folder modes, with optional fix loop and REVIEW_GUIDELINES.md
   - `context.ts` — TUI context viewer: loaded extensions, skills, token usage, cost, context window utilization
   - `session-breakdown.ts` — 7/30/90-day session analytics: tokens, cost, model breakdown, calendar heatmap
+  - `footer.ts` — Theme-aware native footer replacement: left-aligned model, context usage, estimated session cost, and preserved extension statuses. Context warnings follow configured compaction headroom; narrow layouts wrap.
+  - `session-meter.ts` — Session age indicator without estimated hourly cost
+  - `token-tps.ts` — Labeled response throughput and duration-weighted average, including provider waiting/thinking time
   - `control.ts` — Inter-session communication via Unix domain sockets (JSON-RPC protocol)
   - `btw.ts` — Side-channel chat popover for focused Q&A without disrupting main conversation
   - `loop.ts` — `/loop` with breakout conditions: test-driven, custom conditions, or self-directed

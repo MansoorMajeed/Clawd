@@ -1,50 +1,12 @@
 /**
  * Session Meter
  *
- * Status-row indicator of current session age and cost burn rate:
- *
- *   `1h42m · $0.45/h`
- *
- * Cost is summed from `assistantMessage.usage.cost` across all entries
- * in the current session (same source extensions/context.ts uses). The
- * rate is suppressed for very young sessions (<1 minute) where division
- * yields garbage.
+ * Status-row indicator of current session age: `1h42m`.
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 const STATUS_KEY = "session-meter";
-const MIN_RATE_AGE_MS = 60_000;
-
-function extractCost(usage: unknown): number {
-	if (!usage || typeof usage !== "object") return 0;
-	const c = (usage as { cost?: unknown }).cost;
-	if (typeof c === "number") return Number.isFinite(c) ? c : 0;
-	if (typeof c === "string") {
-		const n = Number(c);
-		return Number.isFinite(n) ? n : 0;
-	}
-	if (c && typeof c === "object") {
-		const t = (c as { total?: unknown }).total;
-		if (typeof t === "number") return Number.isFinite(t) ? t : 0;
-		if (typeof t === "string") {
-			const n = Number(t);
-			return Number.isFinite(n) ? n : 0;
-		}
-	}
-	return 0;
-}
-
-function sumSessionCost(ctx: ExtensionContext): number {
-	let total = 0;
-	for (const entry of ctx.sessionManager.getEntries()) {
-		if ((entry as { type?: string }).type !== "message") continue;
-		const msg = (entry as { message?: { role?: string; usage?: unknown } }).message;
-		if (!msg || msg.role !== "assistant") continue;
-		total += extractCost(msg.usage);
-	}
-	return total;
-}
 
 function formatDuration(ms: number): string {
 	if (ms < 60_000) {
@@ -71,18 +33,7 @@ function render(ctx: ExtensionContext): void {
 	const age = formatDuration(ageMs);
 
 	const theme = ctx.ui.theme;
-	if (ageMs < MIN_RATE_AGE_MS) {
-		ctx.ui.setStatus(STATUS_KEY, theme.fg("muted", age));
-		return;
-	}
-
-	const cost = sumSessionCost(ctx);
-	const ratePerHour = cost / (ageMs / 3_600_000);
-	const rateText = `$${ratePerHour.toFixed(2)}/h`;
-	ctx.ui.setStatus(
-		STATUS_KEY,
-		`${theme.fg("muted", age)} ${theme.fg("dim", "·")} ${theme.fg("muted", rateText)}`,
-	);
+	ctx.ui.setStatus(STATUS_KEY, theme.fg("muted", age));
 }
 
 export default function (pi: ExtensionAPI) {

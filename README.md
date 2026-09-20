@@ -44,6 +44,22 @@ Push changes to this repo, then `pi update --extensions` updates unpinned packag
 alias pi='pi update --extensions && command pi'
 ```
 
+## Footer
+
+Clawd replaces Pi's native footer with a small, theme-aware layout:
+
+```text
+~/git/Clawd (main)
+gpt-6-astra · medium · Context 55k / 272k (20%) · Est. $2.25
+GPT W 78% ↓6d · git ✓ · 24m · Speed 42.0 tok/s · avg 38.0 tok/s
+```
+
+The model is highlighted; path, thinking level, and cost are muted. Context shows the active model's configured window, not cumulative token traffic. It turns yellow/red at 80%/95% of the native compaction trigger (`window - reserveTokens`). With auto-compaction disabled, it shows `auto off` and warns relative to the full window. Settings are refreshed on session start, model changes, and before each turn. Unknown usage after compaction displays `?`, not zero.
+
+`Est.` is the accumulated session cost from recorded usage, including tool and summarization usage where available—not a subscription charge. Speed measures provider-reported output tokens over the whole response duration, including waiting/thinking but excluding idle and tool execution; its average covers responses measured since this extension loaded. Session age remains visible without the estimated hourly burn rate.
+
+Existing extension statuses (including GPT quota, reset time, and git status) retain their colors. On narrow terminals, the path shortens and metrics/statuses wrap. This changes display only; model limits and native compaction behavior are unchanged.
+
 ## Skills
 
 | Command | Description |
