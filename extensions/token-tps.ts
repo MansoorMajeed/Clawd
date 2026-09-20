@@ -39,7 +39,7 @@ export default function (pi: ExtensionAPI) {
 		const last = (outputTokens * 1000 / elapsedMs).toFixed(1);
 		const average = (totalOutputTokens * 1000 / totalResponseMs).toFixed(1);
 		if (ctx.hasUI) {
-			ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg("dim", `Last ${last} · Avg ${average} tok/s`));
+			ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg("dim", `Speed ${last} tok/s · avg ${average} tok/s`));
 		}
 	});
 }
