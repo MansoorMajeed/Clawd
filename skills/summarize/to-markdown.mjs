@@ -168,7 +168,7 @@ function summarizeWithPi(markdown, { mdPathForNote = null, extraPrompt = null } 
     ? `\n\nUser-provided context / instructions (follow these closely):\n${extraPrompt}\n`
     : `\n\nNo extra context was provided. If the summary seems misaligned, ask the user for what to focus on (goals, audience, what to extract).\n`;
 
-  const prompt = `You are summarizing a document that has been converted to Markdown.${note}
+  const prompt = `You are summarizing a document that has been converted to Markdown and provided through stdin.${note}
 ${contextBlock}
 Please produce:
 - A short 1-paragraph executive summary
@@ -176,21 +176,22 @@ Please produce:
 - A section "Open questions / missing info" (bullets)
 
 Be concise. Preserve important numbers, names, and constraints.
-${truncNote}
-
---- BEGIN DOCUMENT (Markdown) ---
-${body}
---- END DOCUMENT ---`;
+${truncNote}`;
 
   const result = spawnSync('pi', [
     '--provider', 'anthropic',
     '--model', 'claude-haiku-4-5',
     '--no-tools',
+    '--no-extensions',
+    '--no-skills',
+    '--no-prompt-templates',
+    '--no-context-files',
     '--no-session',
     '-p',
     prompt
   ], {
     encoding: 'utf-8',
+    input: body,
     maxBuffer: 20 * 1024 * 1024,
     timeout: 120_000
   });

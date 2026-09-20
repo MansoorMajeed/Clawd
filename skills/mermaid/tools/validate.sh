@@ -27,7 +27,8 @@ trap 'if [ "$CLEANUP" -eq 1 ]; then rm -f "$OUTPUT"; fi' EXIT
 
 echo "Validating: $INPUT"
 
-# Use mermaid-cli (mmdc) to parse and render. Errors mean invalid syntax.
+# Use mermaid-cli (mmdc) to parse and render. A failure may be syntax-related
+# or caused by the renderer/runtime environment; preserve its error for diagnosis.
 if npx -y @mermaid-js/mermaid-cli -i "$INPUT" -o "$OUTPUT" -q; then
     echo "✓ Mermaid OK"
     echo ""
@@ -48,6 +49,6 @@ process.stdout.write("\n");
         echo "Rendered to: $OUTPUT"
     fi
 else
-    echo "✗ Mermaid validation failed"
+    echo "✗ Mermaid render/validation failed; inspect the error above"
     exit 1
 fi

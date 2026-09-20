@@ -193,53 +193,6 @@ const COOKIE_DISMISS_SCRIPT = `(acceptCookies) => {
     }
   }
 
-  // Last resort: find button near cookie-related text content
-  // Look for visible containers that mention "cookie" and have accept/reject buttons
-  // Include custom elements (Reddit uses rpl-modal-card, etc.)
-  const allContainers = document.querySelectorAll('div, section, aside, [class*="modal"], [class*="dialog"], [role="dialog"]');
-  for (const container of allContainers) {
-    if (!isVisible(container)) continue;
-    const text = container.textContent?.toLowerCase() || '';
-    // Must mention cookies and be reasonably sized (not the whole page)
-    if (text.includes('cookie') && text.length > 100 && text.length < 3000) {
-      const btn = findButtonByText(patterns, container);
-      if (btn && isVisible(btn)) {
-        btn.click();
-        clicked.push('Generic (text-based)');
-        return clicked;
-      }
-    }
-  }
-
-  // Final fallback: look for any visible button with exact accept/reject text
-  // that appears alongside cookie-related content on the page
-  if (document.body.textContent?.toLowerCase().includes('cookie')) {
-    const exactPatterns = acceptCookies 
-      ? ['accept all', 'accept cookies', 'allow all', 'i agree', 'alle akzeptieren']
-      : ['reject all', 'decline all', 'reject optional', 'alle ablehnen'];
-    const singleWordPatterns = acceptCookies ? ['accept', 'agree'] : ['reject', 'decline'];
-    const buttons = document.querySelectorAll('button, [role="button"]');
-    for (const btn of buttons) {
-      if (!isVisible(btn)) continue;
-      const text = (btn.textContent || '').trim().toLowerCase();
-      if (exactPatterns.some(p => text.includes(p))) {
-        btn.click();
-        clicked.push('Generic (exact match)');
-        return clicked;
-      }
-    }
-    // Try single-word matches as last resort
-    for (const btn of buttons) {
-      if (!isVisible(btn)) continue;
-      const text = (btn.textContent || '').trim().toLowerCase();
-      if (singleWordPatterns.some(p => text === p)) {
-        btn.click();
-        clicked.push('Generic (single word)');
-        return clicked;
-      }
-    }
-  }
-
   return clicked;
 }`;
 
