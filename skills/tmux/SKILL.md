@@ -20,9 +20,11 @@ Use tmux (not the Bash tool) when:
 **CRITICAL: Resolve the socket path to an absolute path in your FIRST Bash call.** The `$TMPDIR` variable can be empty or wrong between separate Bash tool invocations.
 
 ```bash
-# Resolve socket path ONCE (absolute path, no $TMPDIR dependency)
-SOCKET="$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null || echo /tmp)claude-tmux-sockets/claude.sock"
-mkdir -p "$(dirname "$SOCKET")"
+# Resolve socket path ONCE and share its directory with the discovery helper
+SOCKET_ROOT="$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null || printf '%s\n' "${TMPDIR:-/tmp}")"
+export CLAUDE_TMUX_SOCKET_DIR="${SOCKET_ROOT%/}/claude-tmux-sockets"
+SOCKET="$CLAUDE_TMUX_SOCKET_DIR/claude.sock"
+mkdir -p "$CLAUDE_TMUX_SOCKET_DIR"
 echo "SOCKET=$SOCKET"  # save this -- reuse in ALL subsequent calls
 ```
 
@@ -51,9 +53,9 @@ This must ALWAYS be printed right after a session was started and once again at 
 
 ## Socket convention
 
-- Agents MUST place tmux sockets under `$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null || echo /tmp)claude-tmux-sockets/` and use `tmux -S "$SOCKET"`.
-- Default socket path: `SOCKET="$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null || echo /tmp)claude-tmux-sockets/claude.sock"`.
-- **WARNING**: Do NOT use `${TMPDIR:-/tmp}` in compound `&&` chains across Bash tool calls -- it can expand to empty. Always resolve to an absolute path first.
+- Agents MUST set `CLAUDE_TMUX_SOCKET_DIR` as shown above, place sockets under it, and use `tmux -S "$SOCKET"`. The explicit slash produces `/tmp/claude-tmux-sockets/claude.sock` on Linux and keeps `find-sessions.sh --all` on the same directory.
+- Default socket path: `SOCKET="$CLAUDE_TMUX_SOCKET_DIR/claude.sock"`.
+- Resolve and print the absolute path once. Separate Bash tool invocations do not preserve shell variables, so prefix later calls with the recorded `SOCKET=/absolute/path` (and `CLAUDE_TMUX_SOCKET_DIR=/absolute/directory` for `--all`) rather than assuming the variables remain set.
 
 ## Targeting panes and naming
 
@@ -93,33 +95,29 @@ Never assume the window number from memory -- always verify.
 
 ### CRITICAL: Never send multi-line code via send-keys
 
-**NEVER send multi-line code or code with special characters (parentheses, quotes, `$`, `#`) via send-keys.** The host bash interprets these before tmux sees them, causing syntax errors in the pane.
+**NEVER send multi-line source via send-keys.** Write it to a file first. A single properly quoted execution command may contain shell metacharacters, as in the completion examples below.
 
-**Always write to a file first, then execute:**
+**Always write multiline source with the file-writing or Bash tool first, then send only the execution command:**
 ```bash
-# Write the script via tmux heredoc (use $'\n' to include newline with -l)
-tmux -S "$SOCKET" send-keys -t target -l $'cat > /tmp/myscript.py << \'PYEOF\'\nimport socket\nprint("hello world")\nPYEOF\n'
-
-# Wait for the shell prompt to return
-./scripts/wait-for-text.sh -S "$SOCKET" -t target -p '\\$' -T 5
-
-# Execute the file with sentinel
-tmux -S "$SOCKET" send-keys -t target -l $'python3 /tmp/myscript.py; echo "===DONE==="\n'
-./scripts/wait-for-text.sh -S "$SOCKET" -t target -p '===DONE===' -F -T 30
+# After creating /tmp/myscript.py outside tmux, execute it with a unique marker.
+MARKER="pi-done-$(date +%s)-$$-$RANDOM"
+tmux -S "$SOCKET" send-keys -t target -- "python3 /tmp/myscript.py; command_status=\$?; printf '\n%s:%s\n' '$MARKER' \"\$command_status\"" Enter
+./scripts/wait-for-text.sh -S "$SOCKET" -t target -m "$MARKER" -T 30
 ```
 
 ## MANDATORY: Waiting for commands -- use sentinels, NEVER blind sleep
 
 **NEVER use `sleep N && capture-pane`.** This wastes time (waits the full N even if the command finishes in 0.5s) and can miss output (if the command takes longer than N).
 
-**ALWAYS append a sentinel marker and poll with `wait-for-text.sh`:**
+**ALWAYS append a fresh marker with the command's exit status and poll with `wait-for-text.sh`:**
 
 ```bash
-# 1. Send command with sentinel appended
-tmux -S "$SOCKET" send-keys -t target -l $'apt install -y foo; echo "===DONE==="\n'
+# 1. Generate a unique marker and send the command with status output appended
+MARKER="pi-done-$(date +%s)-$$-$RANDOM"
+tmux -S "$SOCKET" send-keys -t target -- "apt install -y foo; command_status=\$?; printf '\n%s:%s\n' '$MARKER' \"\$command_status\"" Enter
 
-# 2. Poll for sentinel (exits instantly when found, polls every 0.5s)
-./scripts/wait-for-text.sh -S "$SOCKET" -t target -p '===DONE===' -F -T 120
+# 2. Poll for an exact '<marker>:<exit-status>' output line
+./scripts/wait-for-text.sh -S "$SOCKET" -t target -m "$MARKER" -T 120
 
 # 3. NOW read the output
 tmux -S "$SOCKET" capture-pane -p -J -t target -S -200
@@ -128,7 +126,7 @@ tmux -S "$SOCKET" capture-pane -p -J -t target -S -200
 Why this is mandatory:
 - `sleep 30` wastes 29.5s if the command finishes in 0.5s
 - `sleep 10` misses output if the command takes 11s
-- Sentinel + poll is always correct: returns within 0.5s of completion, never too early, never too late
+- A unique marker cannot match the echoed command or stale output; completion mode returns 0 only for status 0 and reports a nonzero command status as failure
 
 For **interactive prompts** (Python `>>>`, gdb `(gdb)`), use `wait-for-text.sh` with the prompt regex instead of a sentinel.
 
@@ -171,13 +169,14 @@ Some special rules for processes:
 `./scripts/wait-for-text.sh` polls a pane for a regex (or fixed string) with a timeout. Works on Linux/macOS with bash + tmux + grep.
 
 ```bash
-./scripts/wait-for-text.sh -S "$SOCKET" -t session:0.0 -p 'pattern' [-F] [-T 20] [-i 0.5] [-l 2000]
+./scripts/wait-for-text.sh -S "$SOCKET" -t session:0.0 (-p 'pattern' [-F] | -m "$MARKER") [-T 20] [-i 0.5] [-l 2000]
 ```
 
 - `-S`/`--socket` tmux socket path (passed as `tmux -S`)
 - `-t`/`--target` pane target (required)
 - `-p`/`--pattern` regex to match (required); add `-F` for fixed string
+- `-m`/`--completion-marker` exact completion line prefix; waits for `<marker>:<exit-status>` and returns that status as success/failure
 - `-T` timeout seconds (integer, default 15)
 - `-i` poll interval seconds (default 0.5)
 - `-l` history lines to search from the pane (integer, default 1000)
-- Exits 0 on first match, 1 on timeout. On failure prints the last captured text to stderr to aid debugging.
+- Pattern mode exits 0 on first match and 1 on timeout. Completion mode exits 0 only for a reported status of 0; a nonzero status or timeout exits 1. Failures print diagnostics to stderr.

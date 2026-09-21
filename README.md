@@ -10,7 +10,7 @@ Built on [Pi](https://lucumr.pocoo.org/2026/1/31/pi/), an open-source coding age
 
 ## ⚠️ Warning
 
-This is **not** a sandboxed agent. Pi gives the LLM direct bash access with no built-in permission system like Claude Code has. The `permission-guard` extension adds basic guardrails (scoped file access, silent in-scope recursive deletes, and hard-blocked resolved `.git` deletion), but it is **not a security boundary** — it's a safety net for honest mistakes, not a jail.
+This is **not** a sandboxed agent. Pi gives the LLM direct bash access with no built-in permission system like Claude Code has. The `permission-guard` extension adds basic guardrails (scoped file access, silent in-scope recursive deletes, and hard-blocked resolved `.git` deletion), but it is **not a security boundary** — it's a safety net for honest mistakes, not a jail. The active `/btw` side session has unguarded shell and file tools; its tool calls do not pass through the main session's permission guard.
 
 **Run this in a VM, container, or disposable environment** if you're not comfortable with an LLM having shell access to your machine.
 
@@ -18,9 +18,9 @@ This is **not** a sandboxed agent. Pi gives the LLM direct bash access with no b
 
 ```
 Pi (main agent, Opus)
-├── 10 built-in tools (file, bash, glob, grep, etc.)
-├── 21 workflow extensions (safety, editing, review, context, sub-agents)
-└── 22 workflow skills (/plan, /ship, /debug, etc.)
+├── Pi's native tools and commands
+├── 16 active extension entrypoints (safety, review, context, displays, utilities)
+└── 19 active skills (/skill:plan, /skill:ship, /skill:debug, etc.)
 ```
 
 ## Install
@@ -35,6 +35,8 @@ pi install npm:pi-subagents
 
 - [Pi](https://github.com/earendil-works/pi) installed (`npm install -g @earendil-works/pi-coding-agent`)
 - [pi-subagents](https://github.com/nicobailon/pi-subagents) installed (`pi install npm:pi-subagents`) for non-interactive subagents, review loops, and parallel review workflows
+
+Clawd is tested against Pi **0.85.1**. Its wildcard peer dependencies allow Pi to provide the runtime packages; they are not a claim of compatibility with every Pi version.
 
 ## Updating
 
@@ -60,32 +62,41 @@ The model is highlighted; path, thinking level, and cost are muted. Context show
 
 Existing extension statuses (including GPT quota, reset time, and git status) retain their colors. On narrow terminals, the path shortens and metrics/statuses wrap. This changes display only; model limits and native compaction behavior are unchanged.
 
+## Active extensions
+
+The 16 active entrypoints provide the workflow prompt; permission and read-before-edit guards; DuckDuckGo search; interactive review; context and session analytics; a `/clear` reminder for Pi's native `/new`; `/btw`; `/split-fork`; desktop notifications; and the custom footer/status displays for GPT quota, git state, session age, and response throughput. Extension commands are `/add-dir`, `/add-dir-read`, `/review`, `/end-review`, `/context`, `/session-breakdown`, `/clear`, `/btw`, and `/split-fork`.
+
+`/clear` only reminds users to use Pi's native `/new` command; it does not alias `/new` or change the current session. The old session-reset behavior and `multi-edit` override remain removed. Use Pi's native `edit` tool instead; it accepts multiple disjoint replacements in one file but does not provide cross-file batches or Codex-style patch application.
+
 ## Skills
 
-| Command | Description |
+| Skill command | Description |
 |---------|-------------|
-| `/research` | Research and distill into reference docs |
-| `/plan-init` | Initial project plan (architecture, MVP) |
-| `/plan` | Plan a change |
-| `/new-feature` | Feature branch + scoped plan |
-| `/debug` | Root cause first, then fix |
-| `/review` | Fresh-context code review |
-| `/ship` | Checks, version, changelog, PR |
-| `/retro` | Git-based retrospective |
-| `/save-session` | Session handoff |
-| `/update-docs` | Sync llm-context/ with code |
-| `/audit-context` | Full doc audit |
-| `/address-review` | Address findings from `.scratch/reviews/` |
-| `/commit` | Conventional Commits-style git workflow |
-| `/irreversible-action-checklist` | 5-gate verification for destructive actions |
-| `/improve-skill` | Analyze session transcripts to improve skills |
-| `/web-browser` | Chrome DevTools Protocol automation |
-| `/tmux` | Remote control tmux sessions |
-| `/frontend-design` | Frontend design guidelines |
-| `/perf-optimization-cycle` | Performance optimization workflow |
-| `/librarian` | Cache remote git repos for reference reuse |
-| `/summarize` | URL/file to Markdown via markitdown |
-| `/mermaid` | Create/validate Mermaid diagrams |
+| `/skill:research` | Research and distill into reference docs |
+| `/skill:plan-init` | Initial project plan (architecture, MVP) |
+| `/skill:plan` | Plan a feature or change, including branch scope |
+| `/skill:implement-plan` | Execute an approved plan phase by phase |
+| `/skill:debug` | Root cause first, then fix |
+| `/skill:review` | Portable fresh-context, file-based code review (distinct from `/review`) |
+| `/skill:address-review` | Address findings from `.scratch/reviews/` |
+| `/skill:ship` | Checks, version, changelog, push, and PR |
+| `/skill:save-session` | Save handoff state under `.scratch/sessions/` |
+| `/skill:update-docs` | Incremental documentation updates or a full documentation audit |
+| `/skill:commit` | Conventional Commits-style git workflow |
+| `/skill:irreversible-action-checklist` | Verification for destructive actions |
+| `/skill:improve-skill` | Analyze session transcripts to improve skills |
+| `/skill:web-browser` | Chrome DevTools Protocol automation |
+| `/skill:tmux` | Remote control tmux sessions |
+| `/skill:frontend-design` | Frontend design and implementation guidance |
+| `/skill:librarian` | Cache remote git repos for reference reuse |
+| `/skill:summarize` | URL/file to Markdown via markitdown |
+| `/skill:mermaid` | Create and validate Mermaid diagrams |
+
+Feature/branch planning formerly documented as `new-feature` is now part of `plan`. Full documentation auditing formerly documented as `audit-context` is now a mode of `update-docs`.
+
+## Experimental archive
+
+Ten former extensions are preserved under [`experimental/extensions/`](experimental/extensions/): `ai-knowledge`, `journal-advisor`, `continue`, `handoff`, `control`, `loop`, `answer`, `todos`, `todos-status`, and `prompt-editor`. They are disabled, not automatically loaded, unsupported, and known to have unfixed compatibility, state, or lifecycle problems. Their dedicated tests are retained under `experimental/tests/` but are excluded from the active test suite.
 
 ## Subagents and review loops
 
@@ -95,8 +106,9 @@ Recommended split:
 
 - `/review-loop` — automated worker → fresh reviewers → worker cycles until clean or capped
 - `/parallel-review` — fresh reviewer fanout for review-only passes
-- `/review` — Clawd's manual fresh-context review flow
-- `/address-review` — manual file-based handoff from `.scratch/reviews/`
+- `/review` — Clawd's interactive review extension
+- `/skill:review` — portable fresh-context review that writes a findings file
+- `/skill:address-review` — manual file-based handoff from `.scratch/reviews/`
 
 ## MCP support
 
@@ -116,4 +128,4 @@ Clawd is designed as a base package. You can layer additional Pi packages on top
 
 This package incorporates extensions and skills from:
 
-- **[Armin Ronacher's agent-stuff](https://github.com/mitsuhiko/agent-stuff)** — Advanced extensions (multi-edit, review, context, session-breakdown, control, btw, loop, notify, prompt-editor) and utility skills (librarian, summarize, mermaid). The `split-fork` extension is adapted from mitsuhiko's Ghostty-only version to also support zellij, tmux, and Herdr.
+- **[Armin Ronacher's agent-stuff](https://github.com/mitsuhiko/agent-stuff)** — Advanced extensions (multi-edit, review, context, session-breakdown, control, btw, loop, notify, prompt-editor) and utility skills (librarian, summarize, mermaid). This attribution includes source now removed or preserved in the experimental archive. The `split-fork` extension is adapted from mitsuhiko's Ghostty-only version to also support zellij, tmux, and Herdr.

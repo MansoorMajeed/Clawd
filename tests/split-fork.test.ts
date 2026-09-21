@@ -1,4 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { promises as fs } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import splitForkExtension from "../extensions/split-fork";
 
 function setupExtension() {
@@ -107,5 +111,78 @@ describe("split-fork Herdr support", () => {
 			"Failed to launch herdr split: shell busy (created pane w1:p2)",
 			"error",
 		);
+	});
+
+	it("preserves effective labels recorded outside the active branch", async () => {
+		const root = await fs.mkdtemp(path.join(tmpdir(), "split-fork-labels-"));
+		try {
+			const sessionDir = path.join(root, "sessions");
+			const sessionManager = SessionManager.create(root, sessionDir);
+			const rootEntryId = sessionManager.appendMessage({
+				role: "user",
+				content: "Start",
+				timestamp: Date.now(),
+			});
+			const firstAssistantId = sessionManager.appendMessage({
+				role: "assistant",
+				content: [{ type: "text", text: "First branch" }],
+				provider: "test",
+				model: "test",
+				api: "test",
+				usage: {
+					input: 1,
+					output: 1,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens: 2,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+				},
+				stopReason: "stop",
+				timestamp: Date.now(),
+			} as any);
+			sessionManager.appendLabelChange(rootEntryId, "important");
+			sessionManager.branch(firstAssistantId);
+			sessionManager.appendMessage({ role: "user", content: "Active branch", timestamp: Date.now() });
+			sessionManager.appendMessage({
+				role: "assistant",
+				content: [{ type: "text", text: "Active response" }],
+				provider: "test",
+				model: "test",
+				api: "test",
+				usage: {
+					input: 1,
+					output: 1,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens: 2,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+				},
+				stopReason: "stop",
+				timestamp: Date.now(),
+			} as any);
+
+			const sourceSessionFile = sessionManager.getSessionFile();
+			expect(sourceSessionFile).toBeDefined();
+			const { exec, handler, ctx } = setupExtension();
+			ctx.cwd = root;
+			(ctx as any).sessionManager = sessionManager;
+			exec
+				.mockResolvedValueOnce({
+					code: 0,
+					stdout: '{"result":{"pane":{"pane_id":"w1:p2"}}}\n',
+					stderr: "",
+				})
+				.mockResolvedValueOnce({ code: 0, stdout: "", stderr: "" });
+
+			await handler("", ctx);
+
+			const sessionFiles = (await fs.readdir(sessionDir)).map((name) => path.join(sessionDir, name));
+			const forkedSessionFile = sessionFiles.find((file) => file !== sourceSessionFile);
+			expect(forkedSessionFile).toBeDefined();
+			const forkedSession = SessionManager.open(forkedSessionFile!);
+			expect(forkedSession.getLabel(rootEntryId)).toBe("important");
+		} finally {
+			await fs.rm(root, { recursive: true, force: true });
+		}
 	});
 });

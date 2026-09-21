@@ -9,12 +9,11 @@
  */
 
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, ToolResultEvent } from "@earendil-works/pi-coding-agent";
-import { DynamicBorder } from "@earendil-works/pi-coding-agent";
+import { buildSessionContext, convertToLlm, DynamicBorder, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Container, Key, Text, matchesKey, type Component, type TUI } from "@earendil-works/pi-tui";
 import os from "node:os";
 import path from "node:path";
-import fs from "node:fs/promises";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import {
 	buildScaledBreakdown,
 	type ContextCategory,
@@ -34,7 +33,7 @@ function formatUsd(cost: number): string {
 	return `$${cost.toFixed(4)}`;
 }
 
-const SCALE_CACHE_PATH = path.join(os.homedir(), ".pi", "agent", "context-scale-cache.json");
+const SCALE_CACHE_PATH = path.join(getAgentDir(), "context-scale-cache.json");
 
 function readScaleCacheFile(): Record<string, number> {
 	try {
@@ -67,77 +66,6 @@ function normalizeReadPath(inputPath: string, cwd: string): string {
 	else if (p.startsWith("~/")) p = path.join(os.homedir(), p.slice(2));
 	if (!path.isAbsolute(p)) p = path.resolve(cwd, p);
 	return path.resolve(p);
-}
-
-function getAgentDir(): string {
-	// Mirrors pi's behavior reasonably well.
-	const envCandidates = ["PI_CODING_AGENT_DIR", "TAU_CODING_AGENT_DIR"];
-	let envDir: string | undefined;
-	for (const k of envCandidates) {
-		if (process.env[k]) {
-			envDir = process.env[k];
-			break;
-		}
-	}
-	if (!envDir) {
-		for (const [k, v] of Object.entries(process.env)) {
-			if (k.endsWith("_CODING_AGENT_DIR") && v) {
-				envDir = v;
-				break;
-			}
-		}
-	}
-
-	if (envDir) {
-		if (envDir === "~") return os.homedir();
-		if (envDir.startsWith("~/")) return path.join(os.homedir(), envDir.slice(2));
-		return envDir;
-	}
-	return path.join(os.homedir(), ".pi", "agent");
-}
-
-async function readFileIfExists(filePath: string): Promise<{ path: string; content: string; bytes: number } | null> {
-	if (!existsSync(filePath)) return null;
-	try {
-		const buf = await fs.readFile(filePath);
-		return { path: filePath, content: buf.toString("utf8"), bytes: buf.byteLength };
-	} catch {
-		return null;
-	}
-}
-
-async function loadProjectContextFiles(cwd: string): Promise<Array<{ path: string; tokens: number; bytes: number }>> {
-	const out: Array<{ path: string; tokens: number; bytes: number }> = [];
-	const seen = new Set<string>();
-
-	const loadFromDir = async (dir: string) => {
-		for (const name of ["AGENTS.md", "CLAUDE.md"]) {
-			const p = path.join(dir, name);
-			const f = await readFileIfExists(p);
-			if (f && !seen.has(f.path)) {
-				seen.add(f.path);
-				out.push({ path: f.path, tokens: estimateTokens(f.content), bytes: f.bytes });
-				// pi loads at most one of those per dir
-				return;
-			}
-		}
-	};
-
-	await loadFromDir(getAgentDir());
-
-	// Ancestors: root → cwd (same order as pi)
-	const stack: string[] = [];
-	let current = path.resolve(cwd);
-	while (true) {
-		stack.push(current);
-		const parent = path.resolve(current, "..");
-		if (parent === current) break;
-		current = parent;
-	}
-	stack.reverse();
-	for (const dir of stack) await loadFromDir(dir);
-
-	return out;
 }
 
 function normalizeSkillName(name: string): string {
@@ -200,7 +128,7 @@ function extractCostTotal(usage: any): number {
 	return 0;
 }
 
-function sumSessionUsage(ctx: ExtensionCommandContext): {
+export function sumSessionUsageEntries(entries: Array<Record<string, any>>): {
 	input: number;
 	output: number;
 	cacheRead: number;
@@ -214,14 +142,17 @@ function sumSessionUsage(ctx: ExtensionCommandContext): {
 	let cacheWrite = 0;
 	let totalCost = 0;
 
-	for (const entry of ctx.sessionManager.getEntries()) {
-		if ((entry as any)?.type !== "message") continue;
-		const msg = (entry as any)?.message;
-		if (!msg || msg.role !== "assistant") continue;
-		const usage = msg.usage;
+	for (const entry of entries) {
+		let usage: any;
+		if (entry?.type === "message") {
+			const msg = entry.message;
+			if (msg?.role === "assistant" || msg?.role === "toolResult") usage = msg.usage;
+		} else if (entry?.type === "compaction" || entry?.type === "branch_summary") {
+			usage = entry.usage;
+		}
 		if (!usage) continue;
-		input += Number(usage.inputTokens ?? 0) || 0;
-		output += Number(usage.outputTokens ?? 0) || 0;
+		input += Number(usage.input ?? 0) || 0;
+		output += Number(usage.output ?? 0) || 0;
 		cacheRead += Number(usage.cacheRead ?? 0) || 0;
 		cacheWrite += Number(usage.cacheWrite ?? 0) || 0;
 		totalCost += extractCostTotal(usage);
@@ -263,6 +194,14 @@ function fmtTok(n: number): string {
 }
 
 type TokenRow = { name: string; tokens: number };
+
+function availableSkillRows(skills: Array<{ name: string }> | undefined, promptRows: TokenRow[]): TokenRow[] {
+	if (!skills) return promptRows;
+	const promptTokens = new Map(promptRows.map((skill) => [skill.name, skill.tokens]));
+	return skills
+		.map((skill) => ({ name: skill.name, tokens: promptTokens.get(skill.name) ?? 0 }))
+		.sort((a, b) => b.tokens - a.tokens || a.name.localeCompare(b.name));
+}
 
 type ContextViewData = {
 	header: {
@@ -357,7 +296,7 @@ class ContextView implements Component {
 		// Skills table (sorted desc, capped)
 		const skills = this.data.skills.perSkill;
 		lines.push("");
-		lines.push(heading(`Skills (${skills.length}, ${fmtTok(this.data.skills.total)})`));
+		lines.push(heading(`Available skills (${skills.length}, ${fmtTok(this.data.skills.total)} in prompt; highlighted = read during session)`));
 		const shown = skills.slice(0, SKILL_TABLE_CAP);
 		const loaded = new Set(this.data.loadedSkills);
 		lines.push(...this.renderTokenRows(shown, undefined, loaded));
@@ -369,7 +308,7 @@ class ContextView implements Component {
 		// Extensions + session
 		lines.push("");
 		lines.push(
-			muted(`Extensions (${this.data.extensions.length}): `) +
+			muted(`Command-providing extensions (${this.data.extensions.length}): `) +
 				text(this.data.extensions.length ? joinComma(this.data.extensions) : "(none)"),
 		);
 		if (this.data.memoryFiles.length) {
@@ -495,11 +434,11 @@ export default function contextExtension(pi: ExtensionAPI) {
 				extensionsByPath.set(p, arr);
 			}
 			const extensionFiles = [...extensionsByPath.keys()]
-				.map((p) => (p === "<unknown>" ? p : path.basename(p)))
+				.map((p) => (p === "<unknown>" ? p : shortenPath(p, ctx.cwd)))
 				.sort((a, b) => a.localeCompare(b));
 
-			const agentFiles = await loadProjectContextFiles(ctx.cwd);
-			const memoryFiles = agentFiles.map((f) => shortenPath(f.path, ctx.cwd));
+			const promptOptions = ctx.getSystemPromptOptions();
+			const memoryFiles = (promptOptions.contextFiles ?? []).map((f) => shortenPath(f.path, ctx.cwd));
 
 			// Slice the assembled system prompt into system / memory / skills regions, then
 			// reconcile every category against the context window. Tools are computed from real
@@ -517,7 +456,10 @@ export default function contextExtension(pi: ExtensionAPI) {
 			const activeToolNames = pi.getActiveTools();
 			const toolAgg = sumToolTokens(pi.getAllTools(), activeToolNames);
 			const skillAgg = skillBreakdown(regions.skills);
-			const messagesTok = estimateMessagesTokens(ctx.sessionManager.getEntries() as any[]);
+			const availableSkills = availableSkillRows(promptOptions.skills, skillAgg.perSkill);
+			const entries = ctx.sessionManager.getEntries();
+			const activeContext = buildSessionContext(entries, ctx.sessionManager.getLeafId());
+			const messagesTok = estimateMessagesTokens(convertToLlm(activeContext.messages) as any[]);
 
 			// Provider gives an exact total but no category split; char/4 gives the proportions.
 			// Scale the char/4 categories to the real total so slices sum to it (model-agnostic).
@@ -548,7 +490,7 @@ export default function contextExtension(pi: ExtensionAPI) {
 			const percent = ctxWindow > 0 ? (headerTotal / ctxWindow) * 100 : 0;
 			const totalLabel = scaleLabel(breakdown.scaleSource, breakdown.scale);
 
-			const sessionUsage = sumSessionUsage(ctx);
+			const sessionUsage = sumSessionUsageEntries(entries as any[]);
 			const loadedSkills = Array.from(getLoadedSkillsFromSession(ctx)).sort((a, b) => a.localeCompare(b));
 
 			const makePlainText = () => {
@@ -576,20 +518,20 @@ export default function contextExtension(pi: ExtensionAPI) {
 				}
 
 				lines.push("");
-				lines.push(`Skills (${skillAgg.perSkill.length}, ${fmtTok(skillAgg.total)}):`);
-				const skillNameW = Math.min(40, Math.max(...skillAgg.perSkill.map((s) => s.name.length), 4));
-				for (const s of skillAgg.perSkill) {
+				lines.push(`Available skills (${availableSkills.length}, ${fmtTok(skillAgg.total)} in prompt):`);
+				const skillNameW = Math.min(40, Math.max(...availableSkills.map((s) => s.name.length), 4));
+				for (const s of availableSkills) {
 					lines.push(`  ${padRight(s.name, skillNameW)}  ${padLeft(fmtTok(s.tokens), 8)}`);
 				}
 
 				lines.push("");
-				lines.push(`Extensions (${extensionFiles.length}): ${extensionFiles.length ? joinComma(extensionFiles) : "(none)"}`);
+				lines.push(`Command-providing extensions (${extensionFiles.length}): ${extensionFiles.length ? joinComma(extensionFiles) : "(none)"}`);
 				if (memoryFiles.length) lines.push(`Memory (${memoryFiles.length}): ${joinComma(memoryFiles)}`);
 				lines.push(`Session: ${sessionUsage.totalTokens.toLocaleString()} tokens · ${formatUsd(sessionUsage.totalCost)}`);
 				return lines.join("\n");
 			};
 
-			if (!ctx.hasUI) {
+			if (ctx.mode !== "tui") {
 				pi.sendMessage({ customType: "context", content: makePlainText(), display: true }, { triggerTurn: false });
 				return;
 			}
@@ -600,7 +542,7 @@ export default function contextExtension(pi: ExtensionAPI) {
 					: null,
 				categories: breakdown.categories,
 				tools: toolAgg,
-				skills: { total: skillAgg.total, perSkill: skillAgg.perSkill },
+				skills: { total: skillAgg.total, perSkill: availableSkills },
 				memoryFiles,
 				extensions: extensionFiles,
 				loadedSkills,

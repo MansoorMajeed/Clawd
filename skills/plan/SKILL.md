@@ -1,15 +1,15 @@
 ---
 name: plan
-description: Plan a change — refactor, architecture update, or generic task.
+description: Plan a feature or change — branch-scoped feature, refactor, architecture update, or generic task.
 ---
 
 # Plan a Change
 
-For planning subsequent work after the initial MVP — refactors, architecture changes, or any non-feature task.
+For planning subsequent work after the initial MVP — features, refactors, architecture changes, or generic tasks.
 
 ## Step 1: Load Context
 
-Read `llm-context/architecture.md` first to understand the big picture. Then read relevant files in `llm-context/` and recent plans in `.scratch/plans/`.
+Read the project's actual instruction files and documentation layout first (`AGENTS.override.md`, `AGENTS.md`, or `CLAUDE.md`, plus relevant architecture/context docs if they exist). Then read relevant recent plans in `.scratch/plans/`. Do not require or create `llm-context/` unless this project uses it.
 
 ## Step 2: Discussion
 
@@ -17,9 +17,10 @@ What are we changing and why?
 
 Key questions to discuss:
 - Does this align with the architecture vision?
-- If this changes the architecture, we need to update `llm-context/architecture.md` as part of the plan
+- If this changes documented architecture, include the project's existing architecture document in the plan
 - What's the simplest way to achieve this?
 - What could break?
+- Should this work stay on the current branch or use a dedicated `feat/<kebab-case-name>` branch? Record the agreed branch scope in the plan; branch creation belongs to execution preflight.
 - **Test your mental model:** What assumptions is this approach built on? Are you sure they're correct, or are you assuming? The more work that depends on an assumption, the more it's worth verifying before writing the plan.
 
 ## Step 3: Write the Plan
@@ -31,7 +32,8 @@ Write to the plans `todo/` directory — `.scratch/plans/todo/YYYY-MM-DD-HHMMSS-
 
 **Goal:** [one sentence]
 **Approach:** [2-3 sentences]
-**Architecture impact:** [None / Updates architecture.md because...]
+**Branch scope:** [Current branch / feat/<name>]
+**Architecture impact:** [None / Updates <actual architecture doc> because...]
 
 ## File Map
 [Which files will be created/modified]
@@ -43,7 +45,7 @@ Plans are phase checklists: one `- [ ]` per phase, ticked `- [x]` when the phase
 - [ ] **Phase 1: [description]**
   - Files: [exact paths]
   - Steps: [what to do — prose or sub-bullets, not separate checkboxes]
-  - Verification: `make check`
+  - Verification: [project's actual check command]
 - [ ] **Phase 2: [description]**
   - ...
 ```
@@ -51,9 +53,9 @@ Plans are phase checklists: one `- [ ]` per phase, ticked `- [x]` when the phase
 **Guidelines:**
 - Each phase: a logical chunk with specific files and a verification step
 - Keep boxes phase-level (coarse-grained progress), not per-micro-step
-- Include test expectations inline
+- Include test expectations inline. Require a failing regression first when behavior could regress; for genuinely non-behavioral changes, name the applicable syntax/build/docs validation instead. Do not exempt TypeScript, configuration, or Markdown categorically.
 - If the change touches more than ~5 files, consider splitting into multiple plans
-- If it requires architecture changes, include the `architecture.md` update as a phase
+- If it requires architecture changes, include the project's actual architecture documentation update as a phase
 
 ## Step 4: Annotation Loop
 
@@ -64,6 +66,6 @@ Tell the user to review and add `n2c:` annotations. When they say they've review
 
 Do not skip the discussion step. The annotation loop is a conversation, not a rubber stamp.
 
-## Step 5: Execute
+## Step 5: Hand Off Execution
 
-Once approved, proceed with execution. Write tests alongside code, run `make check` frequently, commit after each logical change. Tick each phase `- [x]` as you complete and verify it — the first unchecked box is where to resume after a context reset. Move the plan to `.scratch/plans/done/` when all phases are ticked.
+Once approved, invoke `/skill:implement-plan` or start a fresh session with the approved plan path. `implement-plan` owns branch setup, failing-first behavioral tests, verification, commits, review cadence, progress ticks, and moving the completed plan.

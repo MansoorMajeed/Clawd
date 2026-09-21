@@ -68,6 +68,7 @@ export default function (pi: ExtensionAPI) {
 				dispose() { unsubscribe(); requestRender = undefined; },
 				render(width: number): string[] {
 					if (width <= 0) return [];
+					refreshSettings(ctx);
 					const theme = ctx.ui.theme;
 					const separator = theme.fg("dim", " · ");
 					const home = homedir();
@@ -105,13 +106,13 @@ export default function (pi: ExtensionAPI) {
 		});
 	});
 
-	for (const event of ["turn_start", "model_select"] as const) {
-		pi.on(event, (_event, ctx) => {
-			if (ctx.mode !== "tui") return;
-			refreshSettings(ctx);
-			requestRender?.();
-		});
-	}
+	const refreshFooter = (_event: unknown, ctx: ExtensionContext) => {
+		if (ctx.mode !== "tui") return;
+		refreshSettings(ctx);
+		requestRender?.();
+	};
+	pi.on("turn_start", refreshFooter);
+	pi.on("model_select", refreshFooter);
 	pi.on("thinking_level_select", () => requestRender?.());
 	pi.on("session_shutdown", (_event, ctx) => {
 		if (ctx.mode === "tui") ctx.ui.setFooter(undefined);

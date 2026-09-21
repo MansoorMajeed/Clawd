@@ -3,6 +3,33 @@
  * No Pi dependencies — independently testable.
  */
 
+import { homedir } from "node:os";
+import { isAbsolute, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
+
+function normalizeWindowsShellPath(filePath: string): string {
+	if (!filePath.startsWith("/") || filePath.startsWith("//") || filePath.includes("\\")) return filePath;
+	const match = filePath.match(/^\/(?:mnt\/|cygdrive\/)?([a-z])(?:\/(.*))?$/i);
+	if (!match) return filePath;
+	const suffix = match[2]?.replaceAll("/", "\\");
+	return `${match[1]!.toUpperCase()}:\\${suffix ?? ""}`;
+}
+
+export function resolveToolPath(filePath: string, cwd: string): string {
+	let normalized = filePath.replace(UNICODE_SPACES, " ");
+	if (normalized.startsWith("@")) normalized = normalized.slice(1);
+	if (process.platform === "win32") normalized = normalizeWindowsShellPath(normalized);
+	if (normalized === "~") {
+		normalized = homedir();
+	} else if (normalized.startsWith("~/") || (process.platform === "win32" && normalized.startsWith("~\\"))) {
+		normalized = join(homedir(), normalized.slice(2));
+	}
+	if (/^file:\/\//.test(normalized)) normalized = fileURLToPath(normalized);
+	return isAbsolute(normalized) ? resolve(normalized) : resolve(cwd, normalized);
+}
+
 // ─── Shell Parsing ───
 
 export function splitCommands(command: string): string[] {
@@ -194,6 +221,7 @@ export interface RmTarget {
 export interface RmInvocation {
 	targets: RmTarget[];
 	complete: boolean;
+	cwdKnown?: false;
 }
 
 function parseRmSegment(segment: string): RmInvocation | null {
@@ -244,9 +272,16 @@ function parseRmSegment(segment: string): RmInvocation | null {
 
 export function extractRmInvocations(command: string): RmInvocation[] {
 	const invocations: RmInvocation[] = [];
+	let cwdKnown = true;
 	for (const segment of splitCommands(command)) {
 		const invocation = parseRmSegment(segment);
-		if (invocation) invocations.push(invocation);
+		if (invocation) {
+			invocations.push(cwdKnown ? invocation : { ...invocation, cwdKnown: false });
+		}
+		const commandName = tokenizeShellSegment(segment)[0];
+		if (commandName === "cd" || commandName === "pushd" || commandName === "popd") {
+			cwdKnown = false;
+		}
 	}
 	return invocations;
 }
@@ -642,12 +677,16 @@ export function decideRmAction(targets: ResolvedRmTarget[], ctx: RmDecisionConte
 	if (targets.length === 0) return { action: "prompt" };
 
 	for (const target of targets) {
-		if (!target.resolvedPath) return { action: "prompt", target: target.raw };
+		if (!target.resolvedPath) continue;
 		const resolved = normalizePath(target.resolvedPath);
-		if (resolved.split("/").includes(".git")) {
+		if (resolved.split(/[\\/]/).includes(".git")) {
 			return { action: "block", target: target.raw };
 		}
+	}
 
+	for (const target of targets) {
+		if (!target.resolvedPath) return { action: "prompt", target: target.raw };
+		const resolved = normalizePath(target.resolvedPath);
 		const inWriteScope = ctx.readWritePaths.some(
 			(scope) => !isBroadScope(scope, ctx.home) && isStrictDescendant(scope, resolved),
 		);
@@ -703,26 +742,7 @@ export function extractPaths(toolName: string, input: Record<string, any>): stri
 	if (toolName === "read" || toolName === "write") {
 		if (input.path) paths.add(input.path);
 	} else if (toolName === "edit") {
-		// Single edit
 		if (input.path) paths.add(input.path);
-
-		// Multi edit
-		if (Array.isArray(input.multi)) {
-			for (const edit of input.multi) {
-				if (edit.path) paths.add(edit.path);
-			}
-		}
-
-		// Patch mode — parse *** <path> lines
-		if (typeof input.patch === "string") {
-			const patchLines = input.patch.split("\n");
-			for (const line of patchLines) {
-				const match = line.match(/^\*\*\*\s+(.+)$/);
-				if (match && !match[1].startsWith("Begin") && !match[1].startsWith("End")) {
-					paths.add(match[1].trim());
-				}
-			}
-		}
 	}
 
 	return [...paths];

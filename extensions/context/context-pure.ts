@@ -230,7 +230,8 @@ export function estimateMessagesTokens(entries: Array<Record<string, any>>): num
 	let total = 0;
 	for (const e of entries ?? []) {
 		if (!e || typeof e !== "object") continue;
-		if (e.type === "message") total += oneMessageTokens(e.message);
+		if (typeof e.role === "string") total += oneMessageTokens(e);
+		else if (e.type === "message") total += oneMessageTokens(e.message);
 		else if (e.type === "custom_message") total += Math.ceil(String(e.content ?? "").length / 4);
 		else if (e.type === "branch_summary") total += Math.ceil(String(e.summary ?? "").length / 4);
 		else if (e.type === "compaction") total += Math.ceil(String(e.summary ?? "").length / 4);

@@ -7,13 +7,11 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import path from "node:path";
+import { resolveToolPath } from "./permission-guard/permissions.js";
 
 type EditInput = {
 	path?: string;
-	oldText?: string;
-	newText?: string;
-	multi?: Array<{ path?: string }>;
+	edits?: Array<{ oldText: string; newText: string }>;
 };
 
 export function recordSeenFile(
@@ -21,7 +19,7 @@ export function recordSeenFile(
 	cwd: string,
 	filePath: string,
 ): Set<string> {
-	return new Set(seenFiles).add(path.resolve(cwd, filePath));
+	return new Set(seenFiles).add(resolveToolPath(filePath, cwd));
 }
 
 export function findUnreadEditPath(
@@ -29,21 +27,8 @@ export function findUnreadEditPath(
 	cwd: string,
 	input: EditInput,
 ): string | undefined {
-	const paths: string[] = [];
-
-	if (!input.multi) {
-		if (input.path) paths.push(input.path);
-	} else {
-		if (input.path && input.oldText !== undefined && input.newText !== undefined) {
-			paths.push(input.path);
-		}
-		for (const edit of input.multi) {
-			const filePath = edit.path || input.path;
-			if (filePath) paths.push(filePath);
-		}
-	}
-
-	return paths.find((filePath) => !seenFiles.has(path.resolve(cwd, filePath)));
+	if (!input.path) return undefined;
+	return seenFiles.has(resolveToolPath(input.path, cwd)) ? undefined : input.path;
 }
 
 export function resetSeenFiles(_seenFiles: ReadonlySet<string>): Set<string> {

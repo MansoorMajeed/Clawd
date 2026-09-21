@@ -1,7 +1,7 @@
 /**
  * /session-breakdown
  *
- * Interactive TUI that analyzes ~/.pi/agent/sessions (recursively, *.jsonl) and shows
+ * Interactive TUI that analyzes the configured Pi session store and shows
  * last 7/30/90 days of:
  * - sessions/day
  * - messages/day
@@ -16,7 +16,7 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { BorderedLoader } from "@earendil-works/pi-coding-agent";
+import { BorderedLoader, getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
 import {
 	Key,
 	matchesKey,
@@ -28,8 +28,7 @@ import {
 } from "@earendil-works/pi-tui";
 import os from "node:os";
 import path from "node:path";
-import fs from "node:fs/promises";
-import { createReadStream, type Dirent } from "node:fs";
+import { createReadStream } from "node:fs";
 import readline from "node:readline";
 
 type ModelKey = string; // `${provider}/${model}`
@@ -62,17 +61,17 @@ function todBucketLabel(key: TodKey): string {
 interface ParsedSession {
 	filePath: string;
 	startedAt: Date;
-	dayKeyLocal: string; // YYYY-MM-DD (local)
 	cwd: CwdKey | null;
-	dow: DowKey;
-	tod: TodKey;
 	modelsUsed: Set<ModelKey>;
+	activities: ParsedActivity[];
+}
+
+interface ParsedActivity {
+	at: Date;
+	model: ModelKey;
 	messages: number;
 	tokens: number;
 	totalCost: number;
-	costByModel: Map<ModelKey, number>;
-	messagesByModel: Map<ModelKey, number>;
-	tokensByModel: Map<ModelKey, number>;
 }
 
 interface DayAgg {
@@ -150,7 +149,6 @@ interface BreakdownData {
 	};
 }
 
-const SESSION_ROOT = path.join(os.homedir(), ".pi", "agent", "sessions");
 const RANGE_DAYS = [7, 30, 90] as const;
 
 type MeasurementMode = "sessions" | "messages" | "tokens";
@@ -404,70 +402,19 @@ function extractTokensTotal(usage: any): number {
 
 	// sum of parts
 	const a =
+		readNum(usage?.input) ||
 		readNum(usage?.promptTokens) ||
 		readNum(usage?.prompt_tokens) ||
 		readNum(usage?.inputTokens) ||
 		readNum(usage?.input_tokens);
 	const b =
+		readNum(usage?.output) ||
 		readNum(usage?.completionTokens) ||
 		readNum(usage?.completion_tokens) ||
 		readNum(usage?.outputTokens) ||
 		readNum(usage?.output_tokens);
-	const sum = a + b;
+	const sum = a + b + readNum(usage?.cacheRead) + readNum(usage?.cacheWrite);
 	return sum > 0 ? sum : 0;
-}
-
-async function walkSessionFiles(
-	root: string,
-	startCutoffLocal: Date,
-	signal?: AbortSignal,
-	onFound?: (found: number) => void,
-): Promise<string[]> {
-	const out: string[] = [];
-	const stack: string[] = [root];
-	while (stack.length) {
-		if (signal?.aborted) break;
-		const dir = stack.pop()!;
-		let entries: Dirent[] = [];
-		try {
-			entries = await fs.readdir(dir, { withFileTypes: true });
-		} catch {
-			continue;
-		}
-
-		for (const ent of entries) {
-			if (signal?.aborted) break;
-			const p = path.join(dir, ent.name);
-			if (ent.isDirectory()) {
-				stack.push(p);
-				continue;
-			}
-			if (!ent.isFile() || !ent.name.endsWith(".jsonl")) continue;
-
-			// Prefer filename timestamp, else fall back to mtime.
-			const startedAt = parseSessionStartFromFilename(ent.name);
-			if (startedAt) {
-				if (localMidnight(startedAt) >= startCutoffLocal) {
-					out.push(p);
-					if (onFound && out.length % 10 === 0) onFound(out.length);
-				}
-				continue;
-			}
-
-			try {
-				const st = await fs.stat(p);
-				const approx = new Date(st.mtimeMs);
-				if (localMidnight(approx) >= startCutoffLocal) {
-					out.push(p);
-					if (onFound && out.length % 10 === 0) onFound(out.length);
-				}
-			} catch {
-				// ignore
-			}
-		}
-	}
-	onFound?.(out.length);
-	return out;
 }
 
 async function parseSessionFile(filePath: string, signal?: AbortSignal): Promise<ParsedSession | null> {
@@ -477,12 +424,7 @@ async function parseSessionFile(filePath: string, signal?: AbortSignal): Promise
 	let cwd: CwdKey | null = null;
 
 	const modelsUsed = new Set<ModelKey>();
-	let messages = 0;
-	let tokens = 0;
-	let totalCost = 0;
-	const costByModel = new Map<ModelKey, number>();
-	const messagesByModel = new Map<ModelKey, number>();
-	const tokensByModel = new Map<ModelKey, number>();
+	const pendingActivities: Array<Omit<ParsedActivity, "at"> & { at: Date | null }> = [];
 
 	const stream = createReadStream(filePath, { encoding: "utf8" });
 	const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
@@ -522,6 +464,23 @@ async function parseSessionFile(filePath: string, signal?: AbortSignal): Promise
 				continue;
 			}
 
+			const timestampValue = obj?.timestamp ?? obj?.message?.timestamp;
+			const parsedTimestamp =
+				typeof timestampValue === "number" || typeof timestampValue === "string"
+					? new Date(timestampValue)
+					: null;
+			const activityAt = parsedTimestamp && Number.isFinite(parsedTimestamp.getTime()) ? parsedTimestamp : null;
+
+			if (obj?.type === "compaction" || obj?.type === "branch_summary") {
+				const usage = obj.usage;
+				const tokens = extractTokensTotal(usage);
+				const totalCost = extractCostTotal(usage);
+				if (tokens > 0 || totalCost > 0) {
+					pendingActivities.push({ at: activityAt, model: "unattributed", messages: 0, tokens, totalCost });
+				}
+				continue;
+			}
+
 			if (obj?.type !== "message") continue;
 
 			const { provider, model, modelId, usage } = extractProviderModelAndUsage(obj);
@@ -530,22 +489,15 @@ async function parseSessionFile(filePath: string, signal?: AbortSignal): Promise
 				modelKeyFromParts(provider, modelId) ??
 				currentModel ??
 				"unknown";
+			if (mk !== "unknown" && (provider || model || modelId)) currentModel = mk;
 			modelsUsed.add(mk);
-
-			messages += 1;
-			messagesByModel.set(mk, (messagesByModel.get(mk) ?? 0) + 1);
-
-			const tok = extractTokensTotal(usage);
-			if (tok > 0) {
-				tokens += tok;
-				tokensByModel.set(mk, (tokensByModel.get(mk) ?? 0) + tok);
-			}
-
-			const cost = extractCostTotal(usage);
-			if (cost > 0) {
-				totalCost += cost;
-				costByModel.set(mk, (costByModel.get(mk) ?? 0) + cost);
-			}
+			pendingActivities.push({
+				at: activityAt,
+				model: mk,
+				messages: 1,
+				tokens: extractTokensTotal(usage),
+				totalCost: extractCostTotal(usage),
+			});
 		}
 	} finally {
 		rl.close();
@@ -553,23 +505,12 @@ async function parseSessionFile(filePath: string, signal?: AbortSignal): Promise
 	}
 
 	if (!startedAt) return null;
-	const dayKeyLocal = toLocalDayKey(startedAt);
-	const dow = DOW_NAMES[mondayIndex(startedAt)];
-	const tod = todBucketForHour(startedAt.getHours());
 	return {
 		filePath,
 		startedAt,
-		dayKeyLocal,
 		cwd,
-		dow,
-		tod,
 		modelsUsed,
-		messages,
-		tokens,
-		totalCost,
-		costByModel,
-		messagesByModel,
-		tokensByModel,
+		activities: pendingActivities.map((activity) => ({ ...activity, at: activity.at ?? startedAt! })),
 	};
 }
 
@@ -632,73 +573,68 @@ function buildRangeAgg(days: number, now: Date): RangeAgg {
 	};
 }
 
-function addSessionToRange(range: RangeAgg, session: ParsedSession): void {
-	const day = range.dayByKey.get(session.dayKeyLocal);
+function addSessionStartToRange(range: RangeAgg, session: ParsedSession): void {
+	const day = range.dayByKey.get(toLocalDayKey(session.startedAt));
 	if (!day) return;
 
 	range.sessions += 1;
-	range.totalMessages += session.messages;
-	range.totalTokens += session.tokens;
-	range.totalCost += session.totalCost;
 	day.sessions += 1;
-	day.messages += session.messages;
-	day.tokens += session.tokens;
-	day.totalCost += session.totalCost;
-
-	// Sessions-per-model (presence)
 	for (const mk of session.modelsUsed) {
 		day.sessionsByModel.set(mk, (day.sessionsByModel.get(mk) ?? 0) + 1);
 		range.modelSessions.set(mk, (range.modelSessions.get(mk) ?? 0) + 1);
 	}
 
-	// Messages-per-model
-	for (const [mk, n] of session.messagesByModel.entries()) {
-		day.messagesByModel.set(mk, (day.messagesByModel.get(mk) ?? 0) + n);
-		range.modelMessages.set(mk, (range.modelMessages.get(mk) ?? 0) + n);
+	if (session.cwd) {
+		day.sessionsByCwd.set(session.cwd, (day.sessionsByCwd.get(session.cwd) ?? 0) + 1);
+		range.cwdSessions.set(session.cwd, (range.cwdSessions.get(session.cwd) ?? 0) + 1);
 	}
 
-	// Tokens-per-model
-	for (const [mk, n] of session.tokensByModel.entries()) {
-		day.tokensByModel.set(mk, (day.tokensByModel.get(mk) ?? 0) + n);
-		range.modelTokens.set(mk, (range.modelTokens.get(mk) ?? 0) + n);
-	}
-
-	// Cost-per-model
-	for (const [mk, cost] of session.costByModel.entries()) {
-		day.costByModel.set(mk, (day.costByModel.get(mk) ?? 0) + cost);
-		range.modelCost.set(mk, (range.modelCost.get(mk) ?? 0) + cost);
-	}
-
-	// CWD aggregation
-	const cwd = session.cwd;
-	if (cwd) {
-		day.sessionsByCwd.set(cwd, (day.sessionsByCwd.get(cwd) ?? 0) + 1);
-		range.cwdSessions.set(cwd, (range.cwdSessions.get(cwd) ?? 0) + 1);
-		day.messagesByCwd.set(cwd, (day.messagesByCwd.get(cwd) ?? 0) + session.messages);
-		range.cwdMessages.set(cwd, (range.cwdMessages.get(cwd) ?? 0) + session.messages);
-		day.tokensByCwd.set(cwd, (day.tokensByCwd.get(cwd) ?? 0) + session.tokens);
-		range.cwdTokens.set(cwd, (range.cwdTokens.get(cwd) ?? 0) + session.tokens);
-		day.costByCwd.set(cwd, (day.costByCwd.get(cwd) ?? 0) + session.totalCost);
-		range.cwdCost.set(cwd, (range.cwdCost.get(cwd) ?? 0) + session.totalCost);
-	}
-
-	// Day-of-week aggregation
-	const dow = session.dow;
+	const dow = DOW_NAMES[mondayIndex(session.startedAt)];
+	const tod = todBucketForHour(session.startedAt.getHours());
 	range.dowSessions.set(dow, (range.dowSessions.get(dow) ?? 0) + 1);
-	range.dowMessages.set(dow, (range.dowMessages.get(dow) ?? 0) + session.messages);
-	range.dowTokens.set(dow, (range.dowTokens.get(dow) ?? 0) + session.tokens);
-	range.dowCost.set(dow, (range.dowCost.get(dow) ?? 0) + session.totalCost);
-
-	// Time-of-day aggregation
-	const tod = session.tod;
 	day.sessionsByTod.set(tod, (day.sessionsByTod.get(tod) ?? 0) + 1);
-	day.messagesByTod.set(tod, (day.messagesByTod.get(tod) ?? 0) + session.messages);
-	day.tokensByTod.set(tod, (day.tokensByTod.get(tod) ?? 0) + session.tokens);
-	day.costByTod.set(tod, (day.costByTod.get(tod) ?? 0) + session.totalCost);
 	range.todSessions.set(tod, (range.todSessions.get(tod) ?? 0) + 1);
-	range.todMessages.set(tod, (range.todMessages.get(tod) ?? 0) + session.messages);
-	range.todTokens.set(tod, (range.todTokens.get(tod) ?? 0) + session.tokens);
-	range.todCost.set(tod, (range.todCost.get(tod) ?? 0) + session.totalCost);
+}
+
+function addActivityToRange(range: RangeAgg, session: ParsedSession, activity: ParsedActivity): void {
+	const day = range.dayByKey.get(toLocalDayKey(activity.at));
+	if (!day) return;
+
+	range.totalMessages += activity.messages;
+	range.totalTokens += activity.tokens;
+	range.totalCost += activity.totalCost;
+	day.messages += activity.messages;
+	day.tokens += activity.tokens;
+	day.totalCost += activity.totalCost;
+
+	const mk = activity.model;
+	day.messagesByModel.set(mk, (day.messagesByModel.get(mk) ?? 0) + activity.messages);
+	range.modelMessages.set(mk, (range.modelMessages.get(mk) ?? 0) + activity.messages);
+	day.tokensByModel.set(mk, (day.tokensByModel.get(mk) ?? 0) + activity.tokens);
+	range.modelTokens.set(mk, (range.modelTokens.get(mk) ?? 0) + activity.tokens);
+	day.costByModel.set(mk, (day.costByModel.get(mk) ?? 0) + activity.totalCost);
+	range.modelCost.set(mk, (range.modelCost.get(mk) ?? 0) + activity.totalCost);
+
+	if (session.cwd) {
+		day.messagesByCwd.set(session.cwd, (day.messagesByCwd.get(session.cwd) ?? 0) + activity.messages);
+		range.cwdMessages.set(session.cwd, (range.cwdMessages.get(session.cwd) ?? 0) + activity.messages);
+		day.tokensByCwd.set(session.cwd, (day.tokensByCwd.get(session.cwd) ?? 0) + activity.tokens);
+		range.cwdTokens.set(session.cwd, (range.cwdTokens.get(session.cwd) ?? 0) + activity.tokens);
+		day.costByCwd.set(session.cwd, (day.costByCwd.get(session.cwd) ?? 0) + activity.totalCost);
+		range.cwdCost.set(session.cwd, (range.cwdCost.get(session.cwd) ?? 0) + activity.totalCost);
+	}
+
+	const dow = DOW_NAMES[mondayIndex(activity.at)];
+	const tod = todBucketForHour(activity.at.getHours());
+	range.dowMessages.set(dow, (range.dowMessages.get(dow) ?? 0) + activity.messages);
+	range.dowTokens.set(dow, (range.dowTokens.get(dow) ?? 0) + activity.tokens);
+	range.dowCost.set(dow, (range.dowCost.get(dow) ?? 0) + activity.totalCost);
+	day.messagesByTod.set(tod, (day.messagesByTod.get(tod) ?? 0) + activity.messages);
+	day.tokensByTod.set(tod, (day.tokensByTod.get(tod) ?? 0) + activity.tokens);
+	day.costByTod.set(tod, (day.costByTod.get(tod) ?? 0) + activity.totalCost);
+	range.todMessages.set(tod, (range.todMessages.get(tod) ?? 0) + activity.messages);
+	range.todTokens.set(tod, (range.todTokens.get(tod) ?? 0) + activity.tokens);
+	range.todCost.set(tod, (range.todCost.get(tod) ?? 0) + activity.totalCost);
 }
 
 function sortMapByValueDesc<K extends string>(m: Map<K, number>): Array<{ key: K; value: number }> {
@@ -1246,21 +1182,28 @@ function rangeSummary(range: RangeAgg, days: number, mode: MeasurementMode): str
 	return `Last ${days} days: ${formatCount(range.sessions)} sessions · ${costPart}`;
 }
 
-async function computeBreakdown(
+export async function computeSessionBreakdown(
+	sessionDir: string | undefined,
+	now = new Date(),
 	signal?: AbortSignal,
 	onProgress?: (update: Partial<BreakdownProgressState>) => void,
 ): Promise<BreakdownData> {
-	const now = new Date();
 	const ranges = new Map<number, RangeAgg>();
 	for (const d of RANGE_DAYS) ranges.set(d, buildRangeAgg(d, now));
 	const range90 = ranges.get(90)!;
 	const start90 = range90.days[0].date;
 
 	onProgress?.({ phase: "scan", foundFiles: 0, parsedFiles: 0, totalFiles: 0, currentFile: undefined });
-
-	const candidates = await walkSessionFiles(SESSION_ROOT, start90, signal, (found) => {
-		onProgress?.({ phase: "scan", foundFiles: found });
-	});
+	const reportListProgress = (loaded: number, total: number) => {
+		onProgress?.({ phase: "scan", foundFiles: loaded, totalFiles: total });
+	};
+	const listed = sessionDir
+		? await SessionManager.listAll(sessionDir, reportListProgress)
+		: await SessionManager.listAll(reportListProgress);
+	if (signal?.aborted) throw new Error("Session analysis cancelled");
+	const candidates = listed
+		.filter((session) => localMidnight(session.modified) >= start90)
+		.map((session) => session.path);
 
 	const totalFiles = candidates.length;
 	onProgress?.({
@@ -1280,13 +1223,9 @@ async function computeBreakdown(
 		const session = await parseSessionFile(filePath, signal);
 		if (!session) continue;
 
-		const sessionDay = localMidnight(session.startedAt);
-		for (const d of RANGE_DAYS) {
-			const range = ranges.get(d)!;
-			const start = range.days[0].date;
-			const end = range.days[range.days.length - 1].date;
-			if (sessionDay < start || sessionDay > end) continue;
-			addSessionToRange(range, session);
+		for (const range of ranges.values()) {
+			addSessionStartToRange(range, session);
+			for (const activity of session.activities) addActivityToRange(range, session, activity);
 		}
 	}
 
@@ -1538,13 +1477,22 @@ class BreakdownComponent implements Component {
 	}
 }
 
+function sessionStoreOverride(ctx: ExtensionContext): string | undefined {
+	const current = path.resolve(ctx.sessionManager.getSessionDir());
+	const cwd = path.resolve(ctx.sessionManager.getCwd());
+	const encodedCwd = `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
+	const defaultSessionDir = path.join(getAgentDir(), "sessions", encodedCwd);
+	return current === defaultSessionDir ? undefined : current;
+}
+
 export default function sessionBreakdownExtension(pi: ExtensionAPI) {
 	pi.registerCommand("session-breakdown", {
-		description: "Interactive breakdown of last 7/30/90 days of ~/.pi session usage (sessions/messages/tokens + cost by model)",
+		description: "Interactive breakdown of last 7/30/90 days in the active Pi session store",
 		handler: async (_args, ctx: ExtensionContext) => {
-			if (!ctx.hasUI) {
+			const sessionDir = sessionStoreOverride(ctx);
+			if (ctx.mode !== "tui") {
 				// Non-interactive fallback: just notify.
-				const data = await computeBreakdown(undefined);
+				const data = await computeSessionBreakdown(sessionDir);
 				const range = data.ranges.get(30)!;
 				pi.sendMessage(
 					{
@@ -1602,7 +1550,7 @@ export default function sessionBreakdownExtension(pi: ExtensionAPI) {
 					done(null);
 				};
 
-				computeBreakdown(loader.signal, (update) => Object.assign(progress, update))
+				computeSessionBreakdown(sessionDir, new Date(), loader.signal, (update) => Object.assign(progress, update))
 					.then((d) => {
 						stopTicker();
 						if (!aborted) done(d);

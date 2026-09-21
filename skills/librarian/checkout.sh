@@ -89,7 +89,7 @@ trim_repo_input() {
 }
 
 parse_repo() {
-  local input host path first rest
+  local input host path first rest origin_url authority scheme
   input="$(trim_repo_input "$1")"
 
   # Strip query/fragment for URL-like inputs.
@@ -101,17 +101,22 @@ parse_repo() {
       host="${input#git@}"
       host="${host%%:*}"
       path="${input#*:}"
+      origin_url="git@$host:"
       ;;
     ssh://* )
       rest="${input#ssh://}"
-      host="${rest%%/*}"
-      host="${host#*@}"
+      authority="${rest%%/*}"
+      host="${authority#*@}"
       path="${rest#*/}"
+      origin_url="ssh://$authority/"
       ;;
     http://*|https://* )
+      scheme="${input%%://*}"
       rest="${input#*://}"
-      host="${rest%%/*}"
+      authority="${rest%%/*}"
+      host="${authority#*@}"
       path="${rest#*/}"
+      origin_url="$scheme://$authority/"
       ;;
     */* )
       first="${input%%/*}"
@@ -122,6 +127,7 @@ parse_repo() {
         host="${LIBRARIAN_DEFAULT_HOST:-github.com}"
         path="$input"
       fi
+      origin_url="https://$host/"
       ;;
     * )
       echo "error: unsupported repository format: $input" >&2
@@ -132,6 +138,11 @@ parse_repo() {
   host="${host#*@}"
   path="${path#/}"
   path="${path%/}"
+
+  if [[ "$path" == *//* ]]; then
+    echo "error: repository path contains an empty component: $path" >&2
+    return 1
+  fi
 
   # For GitHub-like deep links, use owner/repo only.
   IFS='/' read -r -a parts <<< "$path"
@@ -152,6 +163,18 @@ parse_repo() {
     return 1
   fi
 
+  if [[ -z "$host" || "$host" == "." || "$host" == ".." || "$host" == *'/'* || "$host" == *'\\'* ]]; then
+    echo "error: invalid repository host: $host" >&2
+    return 1
+  fi
+
+  for component in "${parts[@]}"; do
+    if [[ -z "$component" || "$component" == "." || "$component" == ".." || "$component" == *'\\'* || "$component" == *$'\n'* || "$component" == *$'\r'* ]]; then
+      echo "error: invalid repository path component: $component" >&2
+      return 1
+    fi
+  done
+
   local last_index=$(( ${#parts[@]} - 1 ))
   local repo="${parts[$last_index]}"
   local org_parts=("${parts[@]:0:$last_index}")
@@ -163,29 +186,65 @@ parse_repo() {
     return 1
   fi
 
-  printf '%s\n%s\n%s\n' "$host" "$org" "$repo"
+  printf '%s\n%s\n%s\n%s%s.git\n' "$host" "$org" "$repo" "$origin_url" "$path"
 }
 
-parsed_host=""
-parsed_org=""
-parsed_repo=""
-parsed_index=0
-while IFS= read -r line; do
-  case "$parsed_index" in
-    0) parsed_host="$line" ;;
-    1) parsed_org="$line" ;;
-    2) parsed_repo="$line" ;;
-  esac
-  parsed_index=$((parsed_index + 1))
-done < <(parse_repo "$repo_input")
+if ! parsed_output="$(parse_repo "$repo_input")"; then
+  exit 2
+fi
 
-host="$parsed_host"
-org="$parsed_org"
-repo="$parsed_repo"
+parsed=()
+while IFS= read -r line; do
+  parsed+=("$line")
+done <<< "$parsed_output"
+
+if [[ ${#parsed[@]} -ne 4 ]]; then
+  echo "error: failed to parse repository: $repo_input" >&2
+  exit 2
+fi
+
+host="${parsed[0]}"
+org="${parsed[1]}"
+repo="${parsed[2]}"
+origin_url="${parsed[3]}"
 
 cache_root="${LIBRARIAN_CACHE_ROOT:-$HOME/.cache/checkouts}"
 checkout_path="$cache_root/$host/$org/$repo"
-origin_url="https://$host/$org/$repo.git"
+
+if ! resolved_paths="$(node - "$cache_root" "$checkout_path" <<'NODE'
+const fs = require("node:fs");
+const path = require("node:path");
+
+const root = path.resolve(process.argv[2]);
+const candidate = path.resolve(process.argv[3]);
+const isWithin = (parent, child) => {
+  const relative = path.relative(parent, child);
+  return relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+};
+
+if (!isWithin(root, candidate) || root === candidate) process.exit(1);
+
+const realRoot = fs.existsSync(root) ? fs.realpathSync(root) : root;
+let current = root;
+for (const component of path.relative(root, candidate).split(path.sep)) {
+  current = path.join(current, component);
+  if (!fs.existsSync(current)) break;
+  if (!isWithin(realRoot, fs.realpathSync(current))) process.exit(1);
+}
+
+process.stdout.write(`${root}\n${candidate}`);
+NODE
+)"; then
+  echo "error: checkout path escapes cache root" >&2
+  exit 2
+fi
+
+resolved=()
+while IFS= read -r line; do
+  resolved+=("$line")
+done <<< "$resolved_paths"
+cache_root="${resolved[0]}"
+checkout_path="${resolved[1]}"
 
 mkdir -p "$(dirname "$checkout_path")"
 
@@ -205,7 +264,7 @@ if ! git -C "$checkout_path" remote get-url origin >/dev/null 2>&1; then
   git -C "$checkout_path" remote add origin "$origin_url"
 fi
 
-# If remote URL changed (e.g. host shorthand), normalize to canonical HTTPS URL.
+# Keep the transport requested by the caller, including SSH authentication.
 current_origin="$(git -C "$checkout_path" remote get-url origin 2>/dev/null || true)"
 if [[ "$current_origin" != "$origin_url" ]]; then
   git -C "$checkout_path" remote set-url origin "$origin_url"

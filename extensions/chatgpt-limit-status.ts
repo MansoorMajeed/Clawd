@@ -243,13 +243,17 @@ function setUsageStatus(
 async function fetchUsage(
   ctx: ExtensionContext,
   model = ctx.model,
+  signal?: AbortSignal,
+  isCurrent: () => boolean = () => true,
 ): Promise<ChatGptUsageSnapshot | undefined> {
+  if (!ctx.hasUI || !isCurrent()) return undefined;
   if (!isOpenAICodexProvider(model?.provider)) {
-    clearStatus(ctx);
+    if (isCurrent()) clearStatus(ctx);
     return undefined;
   }
 
   const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+  if (!isCurrent()) return undefined;
   if (!auth.ok || !auth.apiKey) {
     clearStatus(ctx);
     return undefined;
@@ -264,32 +268,38 @@ async function fetchUsage(
   try {
     const response = await fetch(CHATGPT_USAGE_URL, {
       headers: buildUsageHeaders(auth.apiKey, metadata),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)])
+        : AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
+    if (!isCurrent()) return undefined;
     if (!response.ok) {
       clearStatus(ctx);
       return undefined;
     }
 
     const snapshot = parseUsageSnapshot(await response.json());
+    if (!isCurrent()) return undefined;
     if (!snapshot.email && metadata.email) snapshot.email = metadata.email;
     if (!snapshot.planType && metadata.planType)
       snapshot.planType = metadata.planType;
     setUsageStatus(ctx, snapshot);
     return snapshot;
   } catch {
-    clearStatus(ctx);
+    if (isCurrent()) clearStatus(ctx);
     return undefined;
   }
 }
 
+export type LatestOnlyRunner<T> = ((value: T) => void) & { cancel: () => void };
+
 export function createLatestOnlyRunner<T>(
   run: (value: T) => Promise<void>,
-): (value: T) => void {
+): LatestOnlyRunner<T> {
   let running = false;
   let pending: T | undefined;
 
-  const queue = (value: T) => {
+  const queue = ((value: T) => {
     pending = value;
     if (running) return;
 
@@ -308,20 +318,39 @@ export function createLatestOnlyRunner<T>(
         if (pending !== undefined) queue(pending);
       }
     })();
-  };
+  }) as LatestOnlyRunner<T>;
 
+  queue.cancel = () => {
+    pending = undefined;
+  };
   return queue;
 }
 
 type RefreshRequest = {
   ctx: ExtensionContext;
   model?: ExtensionContext["model"];
+  generation: number;
 };
 
 export default function (pi: ExtensionAPI) {
+  let generation = 0;
+  let stopped = false;
+  let activeController: AbortController | undefined;
   const queueUpdate = createLatestOnlyRunner<RefreshRequest>(
     async (request) => {
-      await fetchUsage(request.ctx, request.model);
+      if (request.generation !== generation || stopped) return;
+      const controller = new AbortController();
+      activeController = controller;
+      try {
+        await fetchUsage(
+          request.ctx,
+          request.model,
+          controller.signal,
+          () => request.generation === generation && !stopped && !controller.signal.aborted,
+        );
+      } finally {
+        if (activeController === controller) activeController = undefined;
+      }
     },
   );
 
@@ -331,21 +360,46 @@ export default function (pi: ExtensionAPI) {
     refreshTimer = undefined;
   };
 
+  const invalidateRefreshes = () => {
+    generation += 1;
+    activeController?.abort();
+    activeController = undefined;
+    queueUpdate.cancel();
+  };
+
+  const queueRefresh = (ctx: ExtensionContext, model = ctx.model) => {
+    if (!ctx.hasUI || stopped) return;
+    queueUpdate({ ctx, model, generation });
+  };
+
+  const replaceRefresh = (ctx: ExtensionContext, model = ctx.model) => {
+    invalidateRefreshes();
+    queueRefresh(ctx, model);
+  };
+
   pi.on("agent_start", (_event, ctx) => {
     stopPolling();
-    refreshTimer = setInterval(() => queueUpdate({ ctx }), 30_000);
+    if (!ctx.hasUI || stopped) return;
+    refreshTimer = setInterval(() => queueRefresh(ctx), 30_000);
     refreshTimer.unref();
   });
-  pi.on("session_start", (_event, ctx) => queueUpdate({ ctx }));
-  pi.on("model_select", (event, ctx) =>
-    queueUpdate({ ctx, model: event.model }),
-  );
+  pi.on("session_start", (_event, ctx) => {
+    stopped = false;
+    replaceRefresh(ctx);
+  });
+  pi.on("model_select", (event, ctx) => {
+    invalidateRefreshes();
+    clearStatus(ctx);
+    queueRefresh(ctx, event.model);
+  });
   pi.on("agent_end", (_event, ctx) => {
     stopPolling();
-    queueUpdate({ ctx });
+    queueRefresh(ctx);
   });
   pi.on("session_shutdown", (_event, ctx) => {
     stopPolling();
+    stopped = true;
+    invalidateRefreshes();
     clearStatus(ctx);
   });
 }

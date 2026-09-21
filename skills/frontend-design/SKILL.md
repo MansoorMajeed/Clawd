@@ -23,6 +23,8 @@ Before coding, identify:
 - **Technical constraints**: Framework, library, CSS strategy, accessibility, performance
 - **Content constraints**: Required copy, assets, data, features
 
+Existing product design systems and explicit user constraints take precedence over the stylistic defaults below.
+
 If the user did not provide this, ask **2–4 targeted questions**, or state reasonable assumptions in a short preface.
 
 ## Design Thinking (Required)

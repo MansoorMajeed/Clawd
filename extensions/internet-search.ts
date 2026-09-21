@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { complete, getModel, type Message } from "@earendil-works/pi-ai";
+import type { Message } from "@earendil-works/pi-ai";
 import { Type } from "@sinclair/typebox";
 
 interface SearchResult {
@@ -152,13 +152,12 @@ async function extractRelevantInfo(
     throw new Error("No model available for search extraction");
   }
 
-  const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-  if (!auth.ok) {
-    throw new Error(auth.error);
-  }
-
   const resultsText = results
-    .map((r, i) => `${i + 1}. ${r.title}: ${r.snippet}`)
+    .map((r, i) => [
+      `${i + 1}. ${r.title}`,
+      ...(r.url ? [`URL: ${r.url}`] : []),
+      `Snippet: ${r.snippet}`,
+    ].join("\n"))
     .join("\n\n");
 
   const messageText = `Context: ${context}\n\nSearch results:\n${resultsText}`;
@@ -174,10 +173,10 @@ async function extractRelevantInfo(
     timestamp: Date.now(),
   };
 
-  const response = await complete(
+  const response = await ctx.modelRegistry.complete(
     model,
     { systemPrompt: EXTRACTION_SYSTEM_PROMPT, messages: [userMessage] },
-    { apiKey: auth.apiKey, headers: auth.headers, signal }
+    { signal }
   );
 
   if (response.stopReason === "aborted") {
@@ -264,8 +263,16 @@ export default function (pi: ExtensionAPI) {
         };
       }
 
+      const sources = results
+        .map((result, index) => ({ ...result, index }))
+        .filter((result): result is SearchResult & { index: number; url: string } => Boolean(result.url))
+        .map((result) => `[${result.index + 1}] ${result.title} — ${result.url}`);
+      const content = sources.length > 0
+        ? `${extracted.text}\n\nSources:\n${sources.join("\n")}`
+        : extracted.text;
+
       return {
-        content: [{ type: "text", text: extracted.text }],
+        content: [{ type: "text", text: content }],
         details: {
           query,
           context,

@@ -49,7 +49,7 @@ If `.scratch/research/` exists and is non-empty, scan filenames before starting.
 
 ## Promoting research to permanent docs
 
-After research is complete, ask: should any of this graduate to `llm-context/` or `docs/`?
+After research is complete, ask whether any of it should graduate to the project's established permanent documentation location.
 
 - Cherry-pick the useful bits — don't copy the whole research file
 - Research files in `.scratch/research/` are scratch; committed docs are curated
@@ -57,12 +57,13 @@ After research is complete, ask: should any of this graduate to `llm-context/` o
 
 ## Setup
 
-`.scratch/` should be gitignored globally so it works in any repo without per-repo config:
+First check whether `.scratch/` is already ignored:
 
 ```bash
-echo '.scratch/' >> ~/.gitignore_global
-git config --global core.excludesFile ~/.gitignore_global
+git check-ignore -q .scratch/
 ```
+
+If it is not ignored, propose a minimal change and get approval. Prefer a repository-local `.git/info/exclude` entry for local scratch state. If the user wants a global rule, append to the currently effective excludes file without replacing `core.excludesFile`; never silently point that setting at a new file or discard existing ignore rules.
 
 ## Reminders
 

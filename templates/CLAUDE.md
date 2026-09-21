@@ -4,7 +4,7 @@
 
 ## Tech Stack
 
-<!-- Updated during /plan-init -->
+<!-- Updated during /skill:plan-init -->
 - **Language:** TBD
 - **Build system:** Make (see Makefile)
 
@@ -23,15 +23,10 @@ make coverage # test coverage report
 
 <!-- INDEX, not a dump. One line per file. Read only what's relevant. -->
 
-### llm-context/
-<!-- Updated via /update-docs after significant changes -->
-
-*No context files yet. Created during /plan-init.*
+*Add entries for the documentation layout this project actually uses. Do not create `llm-context/` unless the project adopts it.*
 
 ### Key Directories
-- `docs/sessions/` — Session handoff files for context continuity
 - `docs/adrs/` — Architecture Decision Records
-- `docs/retros/` — Retrospective outputs
 - `.scratch/` — Ephemeral agent work (gitignored): `research/`, `plans/`, `reviews/`, `sessions/`
 
 ## Conventions
@@ -60,20 +55,19 @@ Run `make check` before claiming anything works.
 
 ### Context Management
 
-- llm-context/ is an index, not a dump. Read only what's relevant.
-- After significant changes, run `/update-docs`.
+- Keep context indexes concise. Read only what's relevant.
+- After significant changes, run `/skill:update-docs`.
 - Write ADRs for significant architectural decisions.
 
-## Workflow Commands
+## Workflow Skills
 
-- `/research` — Research and distill into reference docs
-- `/plan-init` — Initial project plan (architecture, MVP, vision)
-- `/plan` — Plan a change (refactor, architecture, generic task)
-- `/new-feature` — Plan and start a feature on a branch
-- `/debug` — Systematic debugging (root cause first)
-- `/review` — Code review from fresh context
-- `/ship` — Run checks, version, changelog, push, PR
-- `/retro` — Retrospective analysis
-- `/save-session` — Save session for handoff
-- `/update-docs` — Update llm-context/ and CLAUDE.md
-- `/audit-context` — Full audit of docs vs codebase
+- `/skill:research` — Research and distill into reference docs
+- `/skill:plan-init` — Initial project plan (architecture, MVP, vision)
+- `/skill:plan` — Plan a feature or change and decide branch scope
+- `/skill:implement-plan` — Execute an approved plan phase by phase
+- `/skill:debug` — Systematic debugging (root cause first)
+- `/skill:review` — Portable fresh-context review that writes findings to `.scratch/reviews/`
+- `/skill:address-review` — Address findings from `.scratch/reviews/`
+- `/skill:ship` — Run checks, version, changelog, push, and create a PR
+- `/skill:save-session` — Save handoff state under `.scratch/sessions/`
+- `/skill:update-docs` — Update project docs or run a full documentation audit

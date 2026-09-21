@@ -80,9 +80,18 @@ const formatNotification = (text: string | null): { title: string; body: string 
 };
 
 export default function (pi: ExtensionAPI) {
+	let lastAssistantText: string | null = null;
+
 	pi.on("agent_end", async (event) => {
-		const lastText = extractLastAssistantText(event.messages ?? []);
-		const { title, body } = formatNotification(lastText);
+		lastAssistantText = extractLastAssistantText(event.messages ?? []);
+	});
+
+	pi.on("agent_settled", async (_event, ctx) => {
+		const settledAssistantText = lastAssistantText;
+		lastAssistantText = null;
+		if (ctx.mode !== "tui") return;
+
+		const { title, body } = formatNotification(settledAssistantText);
 		notify(title, body);
 	});
 }

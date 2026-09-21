@@ -7,39 +7,33 @@ Custom Pi coding agent package — lean system prompt, opinionated workflow. Inc
 ## Structure
 
 - `system-prompt.md` — Clawd workflow prompt, prepended to Pi's assembled system prompt
-- `extensions/` — Pi extensions (TypeScript)
+- `extensions/` — 16 active Pi extension entrypoints (TypeScript)
   - `system-prompt.ts` — Loads the tracked workflow prompt without modifying global Pi configuration
-  - `permission-guard/` — Default-deny permission system. Scopes file operations to project/read-only/read-write paths, blocks destructive commands, and prompts for outside access. In-scope recursive deletes are silent; resolved `.git` deletion is hard-blocked. Supports `/add-dir`, `/add-dir-read`, `--yolo` bypass, and `.pi/permissions.json` allowlists
-  - `handoff.ts` — Generates a context-transfer prompt from the current conversation for a new focused session
-  - `internet-search.ts` — Internet search via DuckDuckGo with isolated LLM extraction to prevent prompt injection
-  - `answer.ts` — Extracts questions from last assistant message into interactive Q&A interface (`/answer` or `Ctrl+.`)
-  - `todos.ts` — File-based todo manager in `.pi/todos/`. LLM tool for CRUD + claim/release, visual `/todos` browser with fuzzy search
-  - `multi-edit.ts` — Replaces built-in `edit` tool with batch edits and Codex-style patch support, with preflight validation
+  - `permission-guard/` — Default-deny guard for the main session. Scopes file operations to project/read-only/read-write paths, prompts for outside access, and hard-blocks resolved `.git` deletion. Supports `/add-dir`, `/add-dir-read`, `--yolo`, and `.pi/permissions.json` allowlists. It is a safety net, not a security boundary.
+  - `read-before-edit.ts` — Requires a successful read or write before native edit; resets after compaction
+  - `clear.ts` — `/clear` reminder directing users to `/new`; preserves the current session
+  - `internet-search.ts` — DuckDuckGo search with separate LLM extraction. Search content remains untrusted; extraction reduces prompt-injection exposure but does not make it trusted.
   - `review.ts` — Code review command supporting PR/branch/commit/folder modes, with optional fix loop and REVIEW_GUIDELINES.md
-  - `context.ts` — TUI context viewer: loaded extensions, skills, token usage, cost, context window utilization
+  - `context/` — `/context` viewer for loaded command extensions and skills, active-context usage, cost, and estimated category breakdowns
   - `session-breakdown.ts` — 7/30/90-day session analytics: tokens, cost, model breakdown, calendar heatmap
   - `footer.ts` — Theme-aware native footer replacement: left-aligned model, context usage, estimated session cost, and preserved extension statuses. Context warnings follow configured compaction headroom; narrow layouts wrap.
   - `session-meter.ts` — Session age indicator without estimated hourly cost
   - `token-tps.ts` — Labeled response throughput and duration-weighted average, including provider waiting/thinking time
-  - `control.ts` — Inter-session communication via Unix domain sockets (JSON-RPC protocol)
-  - `btw.ts` — Side-channel chat popover for focused Q&A without disrupting main conversation
-  - `loop.ts` — `/loop` with breakout conditions: test-driven, custom conditions, or self-directed
-  - `notify.ts` — Native desktop notifications (OSC 777) when the agent finishes
+  - `chatgpt-limit-status.ts` — ChatGPT quota and reset status
+  - `git-status.ts` — Git branch, worktree state, and time-since-commit status
+  - `btw.ts` — Side-channel chat popover for focused Q&A. Its side session uses unguarded shell/file tools and does not pass through the main permission guard.
+  - `notify.ts` — Native desktop notifications (OSC 777) when the agent settles
   - `split-fork.ts` — Fork session into a new pane (zellij, tmux, Herdr, or Ghostty). Auto-detects multiplexer
-  - `prompt-editor.ts` — In-editor prompt selector with persistence, history, thinking level toggle
-  - `clear.ts` — `/clear` command to reset conversation to blank slate (preserves session file)
-  - `read-before-edit.ts` — Blocks edit calls on files not read/written in current session. Resets after compaction.
-  - `continue.ts` — `/continue` command: writes distilled session state to `.scratch/sessions/`, starts fresh session in same window
-  - `ai-knowledge/` — Per-task agent memory in a configured markdown vault. Picker on session start, `journal_append`/`current_task` tools, `/task` command, git auto-commit. Default-off; activates when `~/.pi/agent/ai-knowledge.json` has a valid `rootPath`.
-  - `journal-advisor.ts` — Reminds the agent to `journal_append` when an AI-Knowledge task is active and context has grown 50k tokens since the last reminder/journal entry. Permissive wording to avoid pro-forma entries.
-- `skills/` — Pi skills (Markdown, one SKILL.md per directory)
-  - **Workflow** (13): research (distill into `.scratch/research/`), plan (write to `.scratch/plans/todo/`, n2c annotation loop), plan-init, implement-plan (drive an approved plan to done — quick/deep review modes), new-feature, debug, review, ship, retro, save-session, update-docs, audit-context, address-review
+- `skills/` — 19 Pi skills (Markdown, one SKILL.md per directory), invoked as `/skill:<name>`
+  - **Workflow** (10): research, plan, plan-init, implement-plan, debug, review, ship, save-session, update-docs, address-review. `plan` includes feature/branch setup; `update-docs` includes full-audit mode.
   - **Safety**: irreversible-action-checklist (5-gate verification for destructive actions)
   - **Git**: commit (Conventional Commits-style workflow)
   - **Interactive**: web-browser (Chrome DevTools Protocol automation), tmux (remote control tmux sessions)
   - **Meta**: improve-skill (analyze session transcripts to improve/create skills)
-  - **Design**: frontend-design (frontend design guidelines), perf-optimization-cycle
+  - **Design**: frontend-design (frontend design and implementation guidelines)
   - **Utility**: librarian (cache remote git repos for reuse), summarize (URL/file to Markdown via markitdown), mermaid (create/validate Mermaid diagrams)
+- `experimental/extensions/` — Disabled, unsupported archive of ten known-unfixed extensions: ai-knowledge, journal-advisor, continue, handoff, control, loop, answer, todos, todos-status, and prompt-editor. Nothing here is automatically loaded.
+- Native replacements — `/clear` is a reminder only: use Pi's `/new` to start a fresh session. It does not alias `/new` or change the current session. Use native `edit` instead of the removed `multi-edit` override; native edit supports multiple disjoint replacements within one file, not cross-file batches or Codex patches.
 - `templates/` — Project bootstrapping templates
   - `CLAUDE.md` — Project CLAUDE.md template
   - `Makefile` — Generic Makefile template
@@ -51,6 +45,8 @@ Custom Pi coding agent package — lean system prompt, opinionated workflow. Inc
 pi install git:github.com/MansoorMajeed/Clawd
 ```
 
+The tested Pi baseline is **0.85.1**. Wildcard peer dependency ranges do not imply compatibility with every later Pi release.
+
 ## How it works
 
 The coding agent (Pi + Opus) handles main reasoning. `system-prompt.ts` prepends the tracked workflow prompt to Pi's assembled system prompt. Other extensions provide safety guardrails, interactive tooling, and structured workflows. Skills provide step-by-step guidance for common development tasks.
@@ -59,4 +55,4 @@ This is a base package — environment-specific tools (MCP bridges, admin integr
 
 ## Acknowledgments
 
-Extensions (multi-edit, review, context, session-breakdown, control, btw, loop, notify, prompt-editor) and skills (librarian, summarize, mermaid) from [Armin Ronacher's agent-stuff](https://github.com/mitsuhiko/agent-stuff). The `split-fork` extension is adapted from mitsuhiko's Ghostty-only version to also support zellij, tmux, and Herdr.
+Extensions (multi-edit, review, context, session-breakdown, control, btw, loop, notify, prompt-editor) and skills (librarian, summarize, mermaid) from [Armin Ronacher's agent-stuff](https://github.com/mitsuhiko/agent-stuff). This attribution includes source now removed or preserved in the experimental archive. The `split-fork` extension is adapted from mitsuhiko's Ghostty-only version to also support zellij, tmux, and Herdr.

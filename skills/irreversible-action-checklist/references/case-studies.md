@@ -84,9 +84,10 @@ Same session. After staging the trojanized library, the agent needed to trigger 
 
 **Gate 3 (Preflight)** would have required verifying the reboot mechanism works *before* staging the irreversible payload. The correct order:
 
-1. Stage the payload
-2. Verify the reboot trigger works (test it without the payload first)
-3. Only then combine both
+1. Verify the reboot trigger and recovery path with no payload staged
+2. Stage and validate the payload
+3. Obtain explicit confirmation for the irreversible action
+4. Activate the payload with the verified trigger, then verify the result
 
 The agent skipped testing the reboot mechanism independently because it "worked before."
 
