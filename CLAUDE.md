@@ -7,10 +7,11 @@ Custom Pi coding agent package — lean system prompt, opinionated workflow. Inc
 ## Structure
 
 - `system-prompt.md` — Clawd workflow prompt, prepended to Pi's assembled system prompt
-- `extensions/` — 15 active Pi extension entrypoints (TypeScript)
+- `extensions/` — 16 active Pi extension entrypoints (TypeScript)
   - `system-prompt.ts` — Loads the tracked workflow prompt without modifying global Pi configuration
   - `permission-guard/` — Default-deny guard for the main session. Scopes file operations to project/read-only/read-write paths, prompts for outside access, and hard-blocks resolved `.git` deletion. Supports `/add-dir`, `/add-dir-read`, `--yolo`, and `.pi/permissions.json` allowlists. It is a safety net, not a security boundary.
   - `read-before-edit.ts` — Requires a successful read or write before native edit; resets after compaction
+  - `clear.ts` — `/clear` reminder directing users to `/new`; preserves the current session
   - `internet-search.ts` — DuckDuckGo search with separate LLM extraction. Search content remains untrusted; extraction reduces prompt-injection exposure but does not make it trusted.
   - `review.ts` — Code review command supporting PR/branch/commit/folder modes, with optional fix loop and REVIEW_GUIDELINES.md
   - `context/` — `/context` viewer for loaded command extensions and skills, active-context usage, cost, and estimated category breakdowns
@@ -32,7 +33,7 @@ Custom Pi coding agent package — lean system prompt, opinionated workflow. Inc
   - **Design**: frontend-design (frontend design and implementation guidelines)
   - **Utility**: librarian (cache remote git repos for reuse), summarize (URL/file to Markdown via markitdown), mermaid (create/validate Mermaid diagrams)
 - `experimental/extensions/` — Disabled, unsupported archive of ten known-unfixed extensions: ai-knowledge, journal-advisor, continue, handoff, control, loop, answer, todos, todos-status, and prompt-editor. Nothing here is automatically loaded.
-- Native replacements — Use Pi's `/new` instead of the removed `clear` extension and native `edit` instead of the removed `multi-edit` override. Native edit supports multiple disjoint replacements within one file, not cross-file batches or Codex patches.
+- Native replacements — `/clear` is a reminder only: use Pi's `/new` to start a fresh session. It does not alias `/new` or change the current session. Use native `edit` instead of the removed `multi-edit` override; native edit supports multiple disjoint replacements within one file, not cross-file batches or Codex patches.
 - `templates/` — Project bootstrapping templates
   - `CLAUDE.md` — Project CLAUDE.md template
   - `Makefile` — Generic Makefile template

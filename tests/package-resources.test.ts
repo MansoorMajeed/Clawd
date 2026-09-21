@@ -17,6 +17,7 @@ const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const activeExtensions = [
 	"extensions/btw.ts",
 	"extensions/chatgpt-limit-status.ts",
+	"extensions/clear.ts",
 	"extensions/context/index.ts",
 	"extensions/footer.ts",
 	"extensions/git-status.ts",

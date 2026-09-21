@@ -19,7 +19,7 @@ This is **not** a sandboxed agent. Pi gives the LLM direct bash access with no b
 ```
 Pi (main agent, Opus)
 ├── Pi's native tools and commands
-├── 15 active extension entrypoints (safety, review, context, displays, utilities)
+├── 16 active extension entrypoints (safety, review, context, displays, utilities)
 └── 19 active skills (/skill:plan, /skill:ship, /skill:debug, etc.)
 ```
 
@@ -64,9 +64,9 @@ Existing extension statuses (including GPT quota, reset time, and git status) re
 
 ## Active extensions
 
-The 15 active entrypoints provide the workflow prompt; permission and read-before-edit guards; DuckDuckGo search; interactive review; context and session analytics; `/btw`; `/split-fork`; desktop notifications; and the custom footer/status displays for GPT quota, git state, session age, and response throughput. Extension commands are `/add-dir`, `/add-dir-read`, `/review`, `/end-review`, `/context`, `/session-breakdown`, `/btw`, and `/split-fork`.
+The 16 active entrypoints provide the workflow prompt; permission and read-before-edit guards; DuckDuckGo search; interactive review; context and session analytics; a `/clear` reminder for Pi's native `/new`; `/btw`; `/split-fork`; desktop notifications; and the custom footer/status displays for GPT quota, git state, session age, and response throughput. Extension commands are `/add-dir`, `/add-dir-read`, `/review`, `/end-review`, `/context`, `/session-breakdown`, `/clear`, `/btw`, and `/split-fork`.
 
-The old `clear` and `multi-edit` overrides were removed. Use Pi's native `/new` command and native `edit` tool instead. Native `edit` accepts multiple disjoint replacements in one file; it does not provide cross-file batches or Codex-style patch application.
+`/clear` only reminds users to use Pi's native `/new` command; it does not alias `/new` or change the current session. The old session-reset behavior and `multi-edit` override remain removed. Use Pi's native `edit` tool instead; it accepts multiple disjoint replacements in one file but does not provide cross-file batches or Codex-style patch application.
 
 ## Skills
 
