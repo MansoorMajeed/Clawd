@@ -74,10 +74,14 @@ export default function (pi: ExtensionAPI) {
 					},
 					{ maxTokens: 32, cacheRetention: "none" },
 				);
+				if (response.stopReason === "error" || response.stopReason === "aborted") {
+					throw new Error(response.errorMessage || `model request ${response.stopReason}`);
+				}
 				const suggestion = suggestedName(response.content);
 				if (!suggestion) throw new Error("model returned an empty suggestion");
 
-				const name = (await ctx.ui.editor(pi.getSessionName() ? "Rename session" : "Name session", suggestion))?.trim();
+				const edited = await ctx.ui.editor(pi.getSessionName() ? "Rename session" : "Name session", suggestion);
+				const name = edited?.replace(/[\r\n]+/g, " ").trim();
 				if (!name) {
 					ctx.ui.notify("Session naming cancelled", "info");
 					return;

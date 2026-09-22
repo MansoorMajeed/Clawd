@@ -51,7 +51,7 @@ describe("suggest-name command", () => {
 				userMessage([{ type: "image" }, { type: "text", text: "  Organize my Pi sessions  " }]),
 				userMessage("Ignore this later request"),
 			],
-			editedName: "Organize Pi sessions",
+			editedName: "Organize\nPi sessions",
 			response: "\"Pi Session Organization\"\n",
 		});
 
@@ -88,10 +88,23 @@ describe("suggest-name command", () => {
 		await noModel.command.handler("", noModel.ctx);
 		expect(noModel.notify).toHaveBeenCalledWith("No active model available", "warning");
 
-		const failed = setup();
-		failed.complete.mockRejectedValue(new Error("provider unavailable"));
-		await failed.command.handler("", failed.ctx);
-		expect(failed.notify).toHaveBeenCalledWith("Could not suggest a session name: provider unavailable", "error");
-		expect(failed.setSessionName).not.toHaveBeenCalled();
+		for (const stopReason of ["error", "aborted"] as const) {
+			const resolvedFailure = setup();
+			resolvedFailure.complete.mockResolvedValue({
+				stopReason,
+				errorMessage: "provider unavailable",
+				content: [{ type: "text", text: "Partial Bad Name" }],
+			});
+			await resolvedFailure.command.handler("", resolvedFailure.ctx);
+			expect(resolvedFailure.notify).toHaveBeenCalledWith("Could not suggest a session name: provider unavailable", "error");
+			expect(resolvedFailure.editor).not.toHaveBeenCalled();
+			expect(resolvedFailure.setSessionName).not.toHaveBeenCalled();
+		}
+
+		const rejected = setup();
+		rejected.complete.mockRejectedValue(new Error("request setup failed"));
+		await rejected.command.handler("", rejected.ctx);
+		expect(rejected.notify).toHaveBeenCalledWith("Could not suggest a session name: request setup failed", "error");
+		expect(rejected.setSessionName).not.toHaveBeenCalled();
 	});
 });
