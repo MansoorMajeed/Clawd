@@ -19,7 +19,7 @@ This is **not** a sandboxed agent. Pi gives the LLM direct bash access with no b
 ```
 Pi (main agent, Opus)
 ├── Pi's native tools and commands
-├── 16 active extension entrypoints (safety, review, context, displays, utilities)
+├── 17 active extension entrypoints (safety, review, context, displays, utilities)
 └── 19 active skills (/skill:plan, /skill:ship, /skill:debug, etc.)
 ```
 
@@ -51,12 +51,12 @@ alias pi='pi update --extensions && command pi'
 Clawd replaces Pi's native footer with a small, theme-aware layout:
 
 ```text
-~/git/Clawd (main)
+~/git/Clawd (main) · Session naming improvements
 gpt-6-astra · medium · Context 55k / 272k (20%) · Est. $2.25
 GPT W 78% ↓6d · git ✓ · 24m · Speed 42.0 tok/s · avg 38.0 tok/s
 ```
 
-The model is highlighted; path, thinking level, and cost are muted. Context shows the active model's configured window, not cumulative token traffic. It turns yellow/red at 80%/95% of the native compaction trigger (`window - reserveTokens`). With auto-compaction disabled, it shows `auto off` and warns relative to the full window. Settings are refreshed on session start, model changes, and before each turn. Unknown usage after compaction displays `?`, not zero.
+The model and session name are highlighted; path, thinking level, and cost are muted. Unnamed sessions show `unnamed — /name <name> or /suggest-name`; `/suggest-name` asks the active model for a short name based on the first user request, then opens it for editing before saving it. Context shows the active model's configured window, not cumulative token traffic. It turns yellow/red at 80%/95% of the native compaction trigger (`window - reserveTokens`). With auto-compaction disabled, it shows `auto off` and warns relative to the full window. Settings are refreshed on session start, model changes, and before each turn. Unknown usage after compaction displays `?`, not zero.
 
 `Est.` is the accumulated session cost from recorded usage, including tool and summarization usage where available—not a subscription charge. Speed measures provider-reported output tokens over the whole response duration, including waiting/thinking but excluding idle and tool execution; its average covers responses measured since this extension loaded. Session age remains visible without the estimated hourly burn rate.
 
@@ -64,7 +64,7 @@ Existing extension statuses (including GPT quota, reset time, and git status) re
 
 ## Active extensions
 
-The 16 active entrypoints provide the workflow prompt; permission and read-before-edit guards; DuckDuckGo search; interactive review; context and session analytics; a `/clear` reminder for Pi's native `/new`; `/btw`; `/split-fork`; desktop notifications; and the custom footer/status displays for GPT quota, git state, session age, and response throughput. Extension commands are `/add-dir`, `/add-dir-read`, `/review`, `/end-review`, `/context`, `/session-breakdown`, `/clear`, `/btw`, and `/split-fork`.
+The 17 active entrypoints provide the workflow prompt; permission and read-before-edit guards; DuckDuckGo search; interactive review; context and session analytics; session-name suggestions; a `/clear` reminder for Pi's native `/new`; `/btw`; `/split-fork`; desktop notifications; and the custom footer/status displays for GPT quota, git state, session age, and response throughput. Extension commands are `/add-dir`, `/add-dir-read`, `/review`, `/end-review`, `/context`, `/session-breakdown`, `/suggest-name`, `/clear`, `/btw`, and `/split-fork`.
 
 `/clear` only reminds users to use Pi's native `/new` command; it does not alias `/new` or change the current session. The old session-reset behavior and `multi-edit` override remain removed. Use Pi's native `edit` tool instead; it accepts multiple disjoint replacements in one file but does not provide cross-file batches or Codex-style patch application.
 

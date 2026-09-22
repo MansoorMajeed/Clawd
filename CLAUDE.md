@@ -7,7 +7,7 @@ Custom Pi coding agent package — lean system prompt, opinionated workflow. Inc
 ## Structure
 
 - `system-prompt.md` — Clawd workflow prompt, prepended to Pi's assembled system prompt
-- `extensions/` — 16 active Pi extension entrypoints (TypeScript)
+- `extensions/` — 17 active Pi extension entrypoints (TypeScript)
   - `system-prompt.ts` — Loads the tracked workflow prompt without modifying global Pi configuration
   - `permission-guard/` — Default-deny guard for the main session. Scopes file operations to project/read-only/read-write paths, prompts for outside access, and hard-blocks resolved `.git` deletion. Supports `/add-dir`, `/add-dir-read`, `--yolo`, and `.pi/permissions.json` allowlists. It is a safety net, not a security boundary.
   - `read-before-edit.ts` — Requires a successful read or write before native edit; resets after compaction
@@ -16,7 +16,8 @@ Custom Pi coding agent package — lean system prompt, opinionated workflow. Inc
   - `review.ts` — Code review command supporting PR/branch/commit/folder modes, with optional fix loop and REVIEW_GUIDELINES.md
   - `context/` — `/context` viewer for loaded command extensions and skills, active-context usage, cost, and estimated category breakdowns
   - `session-breakdown.ts` — 7/30/90-day session analytics: tokens, cost, model breakdown, calendar heatmap
-  - `footer.ts` — Theme-aware native footer replacement: left-aligned model, context usage, estimated session cost, and preserved extension statuses. Context warnings follow configured compaction headroom; narrow layouts wrap.
+  - `footer.ts` — Theme-aware native footer replacement: highlighted session names, unnamed-session reminders, left-aligned model, context usage, estimated session cost, and preserved extension statuses. Context warnings follow configured compaction headroom; narrow layouts wrap.
+  - `session-name.ts` — `/suggest-name` generates a short name from the first user request with the active model, then lets the user edit it before saving.
   - `session-meter.ts` — Session age indicator without estimated hourly cost
   - `token-tps.ts` — Labeled response throughput and duration-weighted average, including provider waiting/thinking time
   - `chatgpt-limit-status.ts` — ChatGPT quota and reset status
