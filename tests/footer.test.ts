@@ -16,6 +16,7 @@ function setup(mode = "tui") {
 	vi.mocked(SettingsManager.create).mockReturnValue({ getCompactionSettings: () => ({ ...settings }) } as any);
 	const colors: Record<string, number> = { accent: 36, muted: 90, dim: 90, text: 39, warning: 33, error: 31 };
 	const fg = vi.fn((color: string, text: string) => `\x1b[${colors[color]}m${text}\x1b[39m`);
+	const bold = vi.fn((text: string) => `\x1b[1m${text}\x1b[22m`);
 	const statuses = new Map<string, string>([
 		["token-tps", "Speed 42 tok/s · avg 38 tok/s"],
 		["chatgpt-limit", "\x1b[32mGPT W 78% ↓6d\x1b[39m"],
@@ -36,7 +37,7 @@ function setup(mode = "tui") {
 		getContextUsage: () => ({ tokens: 55_000, contextWindow: ctx.model.contextWindow, percent: 20.2 }),
 		sessionManager: { getEntries: () => [] as any[], getSessionName: () => undefined as string | undefined },
 		ui: {
-			theme: { fg },
+			theme: { fg, bold },
 			setFooter: vi.fn((factory) => {
 				footer?.dispose();
 				footer = factory?.({ requestRender }, ctx.ui.theme, {
@@ -54,7 +55,7 @@ function setup(mode = "tui") {
 	const emit = (name: string) => handlers.get(name)?.({}, ctx);
 	emit("session_start");
 	return {
-		ctx, settings, statuses, fg, emit, requestRender, unsubscribe,
+		ctx, settings, statuses, fg, bold, emit, requestRender, unsubscribe,
 		render: (width = 160) => footer.render(width) as string[],
 		plain: (width = 160) => (footer.render(width) as string[]).map(stripVTControlCharacters),
 		setBranch: (value: string | null) => { branch = value; branchChanged(); },
@@ -73,7 +74,7 @@ describe("readable footer", () => {
 			{ type: "message", message: { role: "user" } },
 		];
 		expect(h.plain().slice(0, 2)).toEqual([
-			"~/git/Clawd (main)",
+			"~/git/Clawd (main) · unnamed — /name <name> or /suggest-name",
 			"gpt-6-astra · medium · Context 55k / 272k (20%) · Est. $2.25",
 		]);
 		expect(h.fg).toHaveBeenCalledWith("accent", "gpt-6-astra");
@@ -139,17 +140,20 @@ describe("readable footer", () => {
 		expect(h.plain()[1]).toContain("auto off");
 	});
 
-	it("updates model, thinking, branch, session name and theme without a restart", () => {
+	it("highlights names and updates model, thinking, branch, session name and theme without a restart", () => {
 		const h = setup();
 		h.ctx.model = { id: "other-model", contextWindow: 128_000, reasoning: true };
 		h.emit("model_select");
 		h.setThinking("high");
 		h.setBranch("feature/footer");
 		h.ctx.sessionManager.getSessionName = () => "Footer work";
+		h.emit("session_info_changed");
 		expect(h.plain()[0]).toBe("~/git/Clawd (feature/footer) · Footer work");
+		expect(h.bold).toHaveBeenCalledWith("Footer work");
+		expect(h.fg).toHaveBeenCalledWith("accent", expect.stringContaining("Footer work"));
 		expect(h.plain()[1]).toContain("other-model · high · Context 55k / 128k (43%)");
 		expect(h.requestRender).toHaveBeenCalled();
-		h.ctx.ui.theme = { fg: vi.fn((_color, text) => text) };
+		h.ctx.ui.theme = { fg: vi.fn((_color, text) => text), bold: vi.fn((text) => text) };
 		expect(h.render()[1]).toBe(h.plain()[1]);
 		h.emit("session_shutdown");
 		expect(h.ctx.ui.setFooter).toHaveBeenLastCalledWith(undefined);

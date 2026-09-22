@@ -28,6 +28,7 @@ const activeExtensions = [
 	"extensions/review.ts",
 	"extensions/session-breakdown.ts",
 	"extensions/session-meter.ts",
+	"extensions/session-name.ts",
 	"extensions/split-fork.ts",
 	"extensions/system-prompt.ts",
 	"extensions/token-tps.ts",
