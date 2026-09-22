@@ -75,9 +75,14 @@ export default function (pi: ExtensionAPI) {
 					let path = ctx.cwd === home ? "~" : ctx.cwd.startsWith(home + sep) ? "~" + ctx.cwd.slice(home.length) : ctx.cwd;
 					const branch = footerData.getGitBranch();
 					const name = ctx.sessionManager.getSessionName();
-					const suffix = `${branch ? ` (${branch})` : ""}${name ? ` · ${name}` : ""}`;
-					if (visibleWidth(path + suffix) > width) path = basename(ctx.cwd);
-					const lines = [truncateToWidth(theme.fg("muted", singleLine(path + suffix)), width)];
+					const locationSuffix = branch ? ` (${branch})` : "";
+					const sessionLabel = name ? ` · ${name}` : " · unnamed — /name <name> or /suggest-name";
+					if (visibleWidth(path + locationSuffix + sessionLabel) > width) path = basename(ctx.cwd);
+					const location = theme.fg("muted", singleLine(path + locationSuffix));
+					const session = name
+						? theme.fg("dim", " · ") + theme.fg("accent", theme.bold(singleLine(name)))
+						: theme.fg("dim", " · ") + theme.fg("warning", "unnamed") + theme.fg("dim", " — /name <name> or /suggest-name");
+					const lines = [truncateToWidth(location + session, width)];
 
 					const usage = ctx.getContextUsage();
 					const window = usage?.contextWindow ?? ctx.model?.contextWindow;
@@ -113,6 +118,7 @@ export default function (pi: ExtensionAPI) {
 	};
 	pi.on("turn_start", refreshFooter);
 	pi.on("model_select", refreshFooter);
+	pi.on("session_info_changed", refreshFooter);
 	pi.on("thinking_level_select", () => requestRender?.());
 	pi.on("session_shutdown", (_event, ctx) => {
 		if (ctx.mode === "tui") ctx.ui.setFooter(undefined);
