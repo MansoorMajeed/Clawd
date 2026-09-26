@@ -551,10 +551,10 @@ export function checkHardBlock(command: string): { description: string } | null 
 
 const RM_DANGEROUS_PATTERNS: Array<{ pattern: RegExp; description: string }> = [
 	// File deletion
-	{ pattern: /\brm\s+.*-[^\s]*r[^\s]*f/, description: "rm with -rf (recursive force delete)" },
-	{ pattern: /\brm\s+.*-[^\s]*f[^\s]*r/, description: "rm with -fr (recursive force delete)" },
-	{ pattern: /\brm\s+-rf\b/, description: "rm -rf" },
-	{ pattern: /\brm\s+-r\b/, description: "rm -r (recursive delete)" },
+	{ pattern: /(?<!-)\brm\s+.*-[^\s]*r[^\s]*f/, description: "rm with -rf (recursive force delete)" },
+	{ pattern: /(?<!-)\brm\s+.*-[^\s]*f[^\s]*r/, description: "rm with -fr (recursive force delete)" },
+	{ pattern: /(?<!-)\brm\s+-rf\b/, description: "rm -rf" },
+	{ pattern: /(?<!-)\brm\s+-r\b/, description: "rm -r (recursive delete)" },
 ];
 
 const DANGEROUS_PATTERNS: Array<{ pattern: RegExp; description: string }> = [
