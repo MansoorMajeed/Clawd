@@ -317,6 +317,13 @@ describe("checkDangerousPattern", () => {
 		expect(checkDangerousPattern("npm install vitest")).toBeNull();
 	});
 
+	it("does NOT mistake Docker's --rm flag for recursive rm", () => {
+		const command =
+			"docker compose run --rm client npm run lint > /tmp/kadha-review-fixes-lint2.log 2>&1; tail -7 /tmp/kadha-review-fixes-lint2.log";
+
+		expect(checkDangerousPattern(command)).toBeNull();
+	});
+
 	it("does NOT catch docker build", () => {
 		expect(checkDangerousPattern("docker build -t myapp .")).toBeNull();
 	});
@@ -332,7 +339,18 @@ describe("checkDangerousPattern", () => {
 	it("exempts parsed head-rm segments but still catches other dangerous segments", () => {
 		expect(checkDangerousPattern("rm -rf foo")).toBeNull();
 		expect(checkDangerousPattern("rm -rf foo && dd if=/dev/zero of=/dev/sda")).not.toBeNull();
-		expect(checkDangerousPattern("find . | xargs rm -rf")).not.toBeNull();
+		for (const command of [
+			"find . | xargs rm -rf",
+			"(rm -rf /tmp/foo)",
+			"$(rm -rf /tmp/foo)",
+			"/bin/rm -rf /tmp/foo",
+			"true &rm -rf /tmp/foo",
+			"find . | xargs \\rm -rf /tmp/foo",
+			"case x in x)rm -rf /tmp/foo;; esac",
+			"$(true)rm -rf /tmp/foo",
+		]) {
+			expect(checkDangerousPattern(command)).not.toBeNull();
+		}
 	});
 });
 
