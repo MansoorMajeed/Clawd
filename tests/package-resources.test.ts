@@ -154,7 +154,7 @@ describe("active package resources", () => {
 			});
 			const edit = session.getAllTools().find((tool) => tool.name === "edit");
 			expect(edit?.sourceInfo).toMatchObject({
-				path: "<builtin:edit>",
+				path: "builtin:edit",
 				source: "builtin",
 			});
 			expect(runtimeErrors).toEqual([]);

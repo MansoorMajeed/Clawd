@@ -46,7 +46,7 @@ Custom Pi coding agent package — lean system prompt, opinionated workflow. Inc
 pi install git:github.com/MansoorMajeed/Clawd
 ```
 
-The tested Pi baseline is **0.85.1**. Wildcard peer dependency ranges do not imply compatibility with every later Pi release.
+The tested Pi baseline is **1.0.4**. Wildcard peer dependency ranges do not imply compatibility with every later Pi release.
 
 ## How it works
 
