@@ -36,7 +36,7 @@ pi install npm:pi-subagents
 - [Pi](https://github.com/earendil-works/pi) installed (`npm install -g @earendil-works/pi-coding-agent`)
 - [pi-subagents](https://github.com/nicobailon/pi-subagents) installed (`pi install npm:pi-subagents`) for non-interactive subagents, review loops, and parallel review workflows
 
-Clawd is tested against Pi **0.85.1**. Its wildcard peer dependencies allow Pi to provide the runtime packages; they are not a claim of compatibility with every Pi version.
+Clawd is tested against Pi **1.0.4**. Its wildcard peer dependencies allow Pi to provide the runtime packages; they are not a claim of compatibility with every Pi version.
 
 ## Updating
 
