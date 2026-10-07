@@ -125,6 +125,23 @@ describe("permission guard Pi integration", () => {
 		});
 	});
 
+	it("allows Docker --rm without skipping dangerous commands chained afterward", async () => {
+		await withHarness({}, async ({ runner, select }) => {
+			const docker = "docker run --rm --platform linux/amd64 alpine true";
+			expect(await runner.emitToolCall(toolCall("bash", { command: docker }))).toBeUndefined();
+			expect(select).not.toHaveBeenCalled();
+
+			for (const suffix of ["docker rm -f container", "docker system prune", "rm -rf $UNKNOWN"]) {
+				expect(await runner.emitToolCall(toolCall("bash", { command: `${docker} && ${suffix}` })))
+				.toMatchObject({ block: true });
+			}
+			expect(select).toHaveBeenCalledTimes(3);
+			expect(await runner.emitToolCall(toolCall("bash", { command: `${docker} && rm -rf .git` })))
+				.toMatchObject({ block: true, reason: expect.stringContaining("HARD BLOCKED") });
+			expect(select).toHaveBeenCalledTimes(3);
+		});
+	});
+
 	it("still allows a known in-scope recursive rm without prompting", async () => {
 		await withHarness({}, async ({ runner, select }) => {
 			expect(await runner.emitToolCall(toolCall("bash", { command: "rm -rf build" }))).toBeUndefined();

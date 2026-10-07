@@ -100,6 +100,15 @@ describe("checkHardBlock", () => {
 		expect(checkHardBlock("rm -rf ~/")).not.toBeNull();
 	});
 
+	it("does not mistake Docker --rm for a hard-blocked rm command", () => {
+		expect(checkHardBlock("docker run --rm --entrypoint ls alpine .git")).toBeNull();
+	});
+
+	it.each(["command rm -rf .git", "/bin/rm -rf .git", "(rm -rf .git/objects)"])(
+		"retains rm hard blocks in %s",
+		(command) => expect(checkHardBlock(command)).not.toBeNull(),
+	);
+
 	it("blocks find .git -delete", () => {
 		expect(checkHardBlock("find .git -delete")).not.toBeNull();
 	});
@@ -287,6 +296,19 @@ describe("checkDangerousPattern", () => {
 	it("catches kubectl delete", () => {
 		expect(checkDangerousPattern("kubectl delete pod my-pod")).not.toBeNull();
 	});
+
+	it.each([
+		"docker run --rm alpine true",
+		"docker run --rm --platform linux/amd64 alpine true",
+		"docker run --platform linux/amd64 --rm alpine true",
+	])("does not mistake Docker --rm for recursive deletion: %s", (command) => {
+		expect(checkDangerousPattern(command)).toBeNull();
+	});
+
+	it.each(["command rm -rf $DIR", "/bin/rm -rf $DIR", "(rm -rf $DIR)"])(
+		"retains fallback rm warnings in %s",
+		(command) => expect(checkDangerousPattern(command)).not.toBeNull(),
+	);
 
 	it("catches docker rm", () => {
 		expect(checkDangerousPattern("docker rm -f container")).not.toBeNull();

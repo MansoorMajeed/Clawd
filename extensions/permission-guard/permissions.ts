@@ -522,14 +522,14 @@ export function checkBroadGitAdd(command: string): { description: string } | nul
 
 const HARD_BLOCK_PATTERNS: Array<{ pattern: RegExp; description: string }> = [
 	// .git directory deletion
-	{ pattern: /\brm\s+.*-[^\s]*r.*\s+\.git\s*\/?$/, description: "Delete .git directory" },
-	{ pattern: /\brm\s+.*-[^\s]*r.*\s+\.git\//, description: "Delete .git directory" },
-	{ pattern: /\brm\s+-rf\s+\.git\s*\/?$/, description: "Delete .git directory" },
+	{ pattern: /(?<![\w-])rm\s+.*-[^\s]*r.*\s+\.git\s*\/?$/, description: "Delete .git directory" },
+	{ pattern: /(?<![\w-])rm\s+.*-[^\s]*r.*\s+\.git\//, description: "Delete .git directory" },
+	{ pattern: /(?<![\w-])rm\s+-rf\s+\.git\s*\/?$/, description: "Delete .git directory" },
 	{ pattern: /\bfind\s+\.git\b.*-delete\b/, description: "Delete .git directory" },
 	// Nuke root
-	{ pattern: /\brm\s+.*-[^\s]*r[^\s]*f\s+\/\s*$/, description: "Delete root filesystem" },
+	{ pattern: /(?<![\w-])rm\s+.*-[^\s]*r[^\s]*f\s+\/\s*$/, description: "Delete root filesystem" },
 	// Nuke home
-	{ pattern: /\brm\s+.*-[^\s]*r[^\s]*f\s+~\s*\/?$/, description: "Delete home directory" },
+	{ pattern: /(?<![\w-])rm\s+.*-[^\s]*r[^\s]*f\s+~\s*\/?$/, description: "Delete home directory" },
 ];
 
 export function checkHardBlock(command: string): { description: string } | null {
@@ -551,10 +551,10 @@ export function checkHardBlock(command: string): { description: string } | null 
 
 const RM_DANGEROUS_PATTERNS: Array<{ pattern: RegExp; description: string }> = [
 	// File deletion
-	{ pattern: /\brm\s+.*-[^\s]*r[^\s]*f/, description: "rm with -rf (recursive force delete)" },
-	{ pattern: /\brm\s+.*-[^\s]*f[^\s]*r/, description: "rm with -fr (recursive force delete)" },
-	{ pattern: /\brm\s+-rf\b/, description: "rm -rf" },
-	{ pattern: /\brm\s+-r\b/, description: "rm -r (recursive delete)" },
+	{ pattern: /(?<![\w-])rm\s+.*-[^\s]*r[^\s]*f/, description: "rm with -rf (recursive force delete)" },
+	{ pattern: /(?<![\w-])rm\s+.*-[^\s]*f[^\s]*r/, description: "rm with -fr (recursive force delete)" },
+	{ pattern: /(?<![\w-])rm\s+-rf\b/, description: "rm -rf" },
+	{ pattern: /(?<![\w-])rm\s+-r\b/, description: "rm -r (recursive delete)" },
 ];
 
 const DANGEROUS_PATTERNS: Array<{ pattern: RegExp; description: string }> = [
