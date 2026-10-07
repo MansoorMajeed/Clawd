@@ -137,14 +137,16 @@ export function stripQuotedContent(segment: string): string {
 	return result.join("");
 }
 
-function tokenizeShellSegment(segment: string): string[] {
+function tokenizeShellSegment(segment: string, rawTokens?: string[]): string[] {
 	const tokens: string[] = [];
 	let current: string[] = [];
 	let i = 0;
+	let tokenStart = 0;
 
 	function pushToken() {
 		if (current.length > 0) {
 			tokens.push(current.join(""));
+			rawTokens?.push(segment.slice(tokenStart, i));
 			current = [];
 		}
 	}
@@ -155,6 +157,7 @@ function tokenizeShellSegment(segment: string): string[] {
 		if (/\s/.test(ch)) {
 			pushToken();
 			i++;
+			tokenStart = i;
 			continue;
 		}
 
@@ -224,8 +227,9 @@ export interface RmInvocation {
 	cwdKnown?: false;
 }
 
-function parseRmSegment(segment: string): RmInvocation | null {
-	const tokens = tokenizeShellSegment(segment);
+function parseRmSegment(segment: string, variables?: Map<string, string>): RmInvocation | null {
+	const rawTokens: string[] = [];
+	const tokens = tokenizeShellSegment(segment, rawTokens);
 	if (tokens[0] !== "rm") return null;
 
 	const targets: RmTarget[] = [];
@@ -233,7 +237,7 @@ function parseRmSegment(segment: string): RmInvocation | null {
 	let options = true;
 	let complete = true;
 
-	for (const token of tokens.slice(1)) {
+	for (const [index, token] of tokens.slice(1).entries()) {
 		if (options && token === "--") {
 			options = false;
 			continue;
@@ -254,6 +258,12 @@ function parseRmSegment(segment: string): RmInvocation | null {
 		}
 
 		options = false;
+		const variable = rawTokens[index + 1].match(/^"\$(?:([A-Za-z_][A-Za-z0-9_]*)|\{([A-Za-z_][A-Za-z0-9_]*)\})"$/);
+		const value = variable ? variables?.get(variable[1] ?? variable[2]) : undefined;
+		if (value !== undefined) {
+			targets.push({ raw: token, resolvePath: value, literal: true });
+			continue;
+		}
 		const slash = token.lastIndexOf("/");
 		const directory = slash === -1 ? "." : token.slice(0, slash) || "/";
 		const basename = token.slice(slash + 1);
@@ -270,11 +280,62 @@ function parseRmSegment(segment: string): RmInvocation | null {
 	return { targets, complete: complete && targets.length > 0 };
 }
 
+// These are not ordinary user scalars: assignments may be ignored, readonly, or
+// followed by a shell-generated value. Reserve the BASH*/EPOCH* families below too.
+const SHELL_MANAGED_VARIABLES = new Set([
+	"DIRSTACK", "GROUPS", "FUNCNAME", "LINENO", "RANDOM", "SRANDOM", "SECONDS",
+	"HISTCMD", "PIPESTATUS", "SHELLOPTS", "UID", "EUID", "PPID", "OPTIND", "_",
+	"PWD", "OLDPWD", "SHLVL",
+]);
+
+function literalAssignmentsBefore(prefix: string): Map<string, string> | undefined {
+	// JS whitespace includes characters Bash treats as command/argument text.
+	if (/[^\S \t\n]/u.test(prefix) || !/\n[ \t]*$/.test(prefix)) return undefined;
+	const variables = new Map<string, string>();
+
+	for (const line of prefix.split("\n")) {
+		const trimmed = line.replace(/^[ \t]+|[ \t]+$/g, "");
+		if (!trimmed) continue;
+		const assignment = trimmed.match(
+			/^([A-Za-z_][A-Za-z0-9_]*)=(?:([A-Za-z0-9_./][A-Za-z0-9_./-]*)|'([A-Za-z0-9_./][A-Za-z0-9_./ -]*)'|"([A-Za-z0-9_./][A-Za-z0-9_./ -]*)")$/,
+		);
+		if (assignment) {
+			const name = assignment[1];
+			if (SHELL_MANAGED_VARIABLES.has(name) || /^(?:BASH|EPOCH)/.test(name)) return undefined;
+			variables.set(name, assignment[2] ?? assignment[3] ?? assignment[4]);
+			continue;
+		}
+
+		// Reject unfamiliar shell structure instead of trying to recover its scope.
+		const unquoted = line.replace(/'[^']*'|"[^"]*"/g, "");
+		if (
+			/[\\`]/.test(line) || line.includes("$(") || /['"(){};#]/.test(unquoted) ||
+			/<<|[|&]\s*$|(^|[^&])&([^&]|$)/.test(unquoted)
+		) return undefined;
+		for (const segment of splitCommands(line)) {
+			const name = tokenizeShellSegment(segment)[0];
+			if (!/^[A-Za-z0-9_./-]+$/.test(name)) return undefined;
+			if (/^(?:if|then|else|elif|fi|for|while|until|do|done|case|esac|select|function|coproc|time|eval|fc|jobs|source|\.|declare|typeset|local|readonly|read|mapfile|readarray|export|trap|alias|unalias|enable|shopt|builtin|command|exec)$/.test(name)) return undefined;
+			if (name === "set" && !/^set\s+-o\s+pipefail$/.test(segment)) return undefined;
+		}
+		variables.clear();
+	}
+	return variables;
+}
+
 export function extractRmInvocations(command: string): RmInvocation[] {
 	const invocations: RmInvocation[] = [];
+	// Validate the entire call too: a continuation after rm can add hidden operands.
+	const canInferVariables = literalAssignmentsBefore(`${command}\n`) !== undefined;
 	let cwdKnown = true;
+	let offset = 0;
 	for (const segment of splitCommands(command)) {
-		const invocation = parseRmSegment(segment);
+		const start = command.indexOf(segment, offset);
+		offset = start + segment.length;
+		const variables = canInferVariables && /^rm\s/.test(segment)
+			? literalAssignmentsBefore(command.slice(0, start))
+			: undefined;
+		const invocation = parseRmSegment(segment, variables);
 		if (invocation) {
 			invocations.push(cwdKnown ? invocation : { ...invocation, cwdKnown: false });
 		}
@@ -522,14 +583,14 @@ export function checkBroadGitAdd(command: string): { description: string } | nul
 
 const HARD_BLOCK_PATTERNS: Array<{ pattern: RegExp; description: string }> = [
 	// .git directory deletion
-	{ pattern: /\brm\s+.*-[^\s]*r.*\s+\.git\s*\/?$/, description: "Delete .git directory" },
-	{ pattern: /\brm\s+.*-[^\s]*r.*\s+\.git\//, description: "Delete .git directory" },
-	{ pattern: /\brm\s+-rf\s+\.git\s*\/?$/, description: "Delete .git directory" },
+	{ pattern: /(?<![\w-])rm\s+.*-[^\s]*r.*\s+\.git\s*\/?$/, description: "Delete .git directory" },
+	{ pattern: /(?<![\w-])rm\s+.*-[^\s]*r.*\s+\.git\//, description: "Delete .git directory" },
+	{ pattern: /(?<![\w-])rm\s+-rf\s+\.git\s*\/?$/, description: "Delete .git directory" },
 	{ pattern: /\bfind\s+\.git\b.*-delete\b/, description: "Delete .git directory" },
 	// Nuke root
-	{ pattern: /\brm\s+.*-[^\s]*r[^\s]*f\s+\/\s*$/, description: "Delete root filesystem" },
+	{ pattern: /(?<![\w-])rm\s+.*-[^\s]*r[^\s]*f\s+\/\s*$/, description: "Delete root filesystem" },
 	// Nuke home
-	{ pattern: /\brm\s+.*-[^\s]*r[^\s]*f\s+~\s*\/?$/, description: "Delete home directory" },
+	{ pattern: /(?<![\w-])rm\s+.*-[^\s]*r[^\s]*f\s+~\s*\/?$/, description: "Delete home directory" },
 ];
 
 export function checkHardBlock(command: string): { description: string } | null {
@@ -551,10 +612,10 @@ export function checkHardBlock(command: string): { description: string } | null 
 
 const RM_DANGEROUS_PATTERNS: Array<{ pattern: RegExp; description: string }> = [
 	// File deletion
-	{ pattern: /\brm\s+.*-[^\s]*r[^\s]*f/, description: "rm with -rf (recursive force delete)" },
-	{ pattern: /\brm\s+.*-[^\s]*f[^\s]*r/, description: "rm with -fr (recursive force delete)" },
-	{ pattern: /\brm\s+-rf\b/, description: "rm -rf" },
-	{ pattern: /\brm\s+-r\b/, description: "rm -r (recursive delete)" },
+	{ pattern: /(?<![\w-])rm\s+.*-[^\s]*r[^\s]*f/, description: "rm with -rf (recursive force delete)" },
+	{ pattern: /(?<![\w-])rm\s+.*-[^\s]*f[^\s]*r/, description: "rm with -fr (recursive force delete)" },
+	{ pattern: /(?<![\w-])rm\s+-rf\b/, description: "rm -rf" },
+	{ pattern: /(?<![\w-])rm\s+-r\b/, description: "rm -r (recursive delete)" },
 ];
 
 const DANGEROUS_PATTERNS: Array<{ pattern: RegExp; description: string }> = [
