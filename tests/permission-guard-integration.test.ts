@@ -5,7 +5,7 @@ import {
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -139,6 +139,85 @@ describe("permission guard Pi integration", () => {
 			expect(await runner.emitToolCall(toolCall("bash", { command: `${docker} && rm -rf .git` })))
 				.toMatchObject({ block: true, reason: expect.stringContaining("HARD BLOCKED") });
 			expect(select).toHaveBeenCalledTimes(3);
+		});
+	});
+
+	it("allows the reported simulator cleanup through a nearby literal RUN assignment", async () => {
+		await withHarness({}, async ({ runner, select }) => {
+			const command = `set -o pipefail
+UDID=99CCA5AC-F40E-40EF-8E11-B8981F3BF166
+xcrun simctl list devices | grep -E '99CCA5AC|E23BB698'
+xcrun simctl boot "$UDID" 2>/dev/null || true
+xcrun simctl bootstatus "$UDID" -b
+RUN=.scratch/sleep-card/final-current/cpu
+rm -rf "$RUN" && mkdir -p "$RUN"`;
+			expect(await runner.emitToolCall(toolCall("bash", { command }))).toBeUndefined();
+			expect(select).not.toHaveBeenCalled();
+		});
+	});
+
+	it.each([
+		'DIRSTACK=.scratch/cpu\nrm -rf "$DIRSTACK"',
+		'RUN=.git\n\u00a0RUN=.scratch/cpu\nrm -rf "$RUN"',
+		'RUN=.git\n\rRUN=.scratch/cpu\nrm -rf "$RUN"',
+		'history -s "readonly RUN"\nRUN=.git\nfc -s\nRUN=.scratch/cpu\nrm -rf "$RUN"',
+		'RUN=.git\njobs -x readonly RUN\nRUN=.scratch/cpu\nrm -rf "$RUN"',
+		'jobs -x cd .git\nRUN=objects\nrm -rf "$RUN"',
+		'RUN=.git\njobs -x eval "readonly RUN"\nRUN=.scratch/cpu\nrm -rf "$RUN"',
+	])("prompts when apparent assignments do not establish a literal scalar: %s", async (command) => {
+		await withHarness({}, async ({ runner, select }) => {
+			expect(await runner.emitToolCall(toolCall("bash", { command }))).toMatchObject({ block: true });
+			expect(select).toHaveBeenCalledOnce();
+		});
+	});
+
+	it.each([false, true])("does not let DIRSTACK bypass unknown cwd protection (yolo=%s)", async (yolo) => {
+		await withHarness({ yolo }, async ({ cwd, runner, select }) => {
+			await mkdir(join(cwd, ".git"));
+			expect(await runner.emitToolCall(toolCall("bash", {
+				command: 'cd .git\nDIRSTACK=/tmp/clawd-permission-test\nrm -rf "$DIRSTACK"',
+			}))).toMatchObject({ block: true });
+			expect(select).toHaveBeenCalledTimes(yolo ? 0 : 1);
+		});
+	});
+
+	it("checks resolved variable paths rather than trusting every literal assignment", async () => {
+		await withHarness({}, async ({ runner, select }) => {
+			expect(await runner.emitToolCall(toolCall("bash", {
+				command: 'RUN=/etc/clawd-permission-test\nrm -rf "$RUN"',
+			}))).toMatchObject({ block: true });
+			expect(select).toHaveBeenCalledOnce();
+		});
+	});
+
+	it.each([false, true])("hard-blocks variable .git targets, including later operands (yolo=%s)", async (yolo) => {
+		await withHarness({ yolo }, async ({ runner, select }) => {
+			for (const operands of ['"$RUN"', 'build "$RUN"', '/etc/clawd-permission-test "$RUN"']) {
+				expect(await runner.emitToolCall(toolCall("bash", {
+					command: `RUN=.git/objects\nrm -rf ${operands}`,
+				}))).toMatchObject({ block: true, reason: expect.stringContaining("Delete .git path") });
+			}
+			expect(select).not.toHaveBeenCalled();
+		});
+	});
+
+	it("canonicalizes variable targets through symlinked parents", async () => {
+		await withHarness({}, async ({ cwd, runner, select }) => {
+			await mkdir(join(cwd, ".git"));
+			await symlink(join(cwd, ".git"), join(cwd, "linked-git"));
+			expect(await runner.emitToolCall(toolCall("bash", {
+				command: 'RUN=linked-git/objects\nrm -rf "$RUN"',
+			}))).toMatchObject({ block: true, reason: expect.stringContaining("Delete .git path") });
+			expect(select).not.toHaveBeenCalled();
+		});
+	});
+
+	it.each([false, true])("keeps relative variable targets unresolved after cd (yolo=%s)", async (yolo) => {
+		await withHarness({ yolo }, async ({ runner, select }) => {
+			expect(await runner.emitToolCall(toolCall("bash", {
+				command: 'cd /etc\nRUN=clawd-permission-test\nrm -rf "$RUN"',
+			}))).toMatchObject({ block: true });
+			expect(select).toHaveBeenCalledTimes(yolo ? 0 : 1);
 		});
 	});
 

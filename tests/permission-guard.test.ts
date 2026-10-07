@@ -359,6 +359,98 @@ describe("checkDangerousPattern", () => {
 });
 
 describe("extractRmInvocations", () => {
+	it.each([
+		['RUN=.scratch/cpu\nrm -rf "$RUN"', ".scratch/cpu"],
+		['RUN=".scratch/cpu results"\nrm -rf "${RUN}"', ".scratch/cpu results"],
+		["RUN='.scratch/cpu'\nrm -rf \"$RUN\"", ".scratch/cpu"],
+		['RUN=.scratch/old\nRUN=.scratch/new\nrm -rf "$RUN"', ".scratch/new"],
+	])("resolves a nearby literal assignment: %s", (command, path) => {
+		expect(extractRmInvocations(command)[0]?.targets[0]).toMatchObject({
+			resolvePath: path,
+			literal: true,
+		});
+	});
+
+	it.each([
+		'rm -rf "$RUN"',
+		'RUN=$(mktemp -d)\nrm -rf "$RUN"',
+		'RUN=$OTHER\nrm -rf "$RUN"',
+		'RUN=.scratch/cpu\nRUN=$OTHER\nrm -rf "$RUN"',
+		'RUN=.scratch/cpu\necho ready\nrm -rf "$RUN"',
+		'RUN=.scratch/cpu\nunset RUN\nrm -rf "$RUN"',
+		'RUN=.scratch/cpu\nrm -rf $RUN',
+		"RUN=.scratch/cpu\nrm -rf '$RUN'",
+		'RUN=.scratch/cpu\nrm -rf "\\$RUN"',
+		'RUN=.scratch/cpu\nrm -rf "$RUN/child"',
+		'RUN=.scratch/cpu\nrm -rf "${RUN:-/etc}"',
+		'RUN=.scratch/cpu; rm -rf "$RUN"',
+		'false &&\nRUN=.scratch/cpu\nrm -rf "$RUN"',
+		'false ||\nRUN=.scratch/cpu\nrm -rf "$RUN"',
+		'echo hi |\nRUN=.scratch/cpu\nrm -rf "$RUN"',
+		'RUN=.scratch/cpu &\nrm -rf "$RUN"',
+		'(\nRUN=.scratch/cpu\n)\nrm -rf "$RUN"',
+		'if false; then\nRUN=.scratch/cpu\nfi\nrm -rf "$RUN"',
+		'cat <<EOF\nRUN=.scratch/cpu\nrm -rf "$RUN"\nEOF',
+		'printf "%s" "\nRUN=.scratch/cpu\nrm -rf "$RUN"',
+		'RUN=~/.scratch/cpu\nrm -rf "$RUN"',
+		'RUN=".scratch/*"\nrm -rf "$RUN"',
+		'readonly RUN=/etc\nRUN=.scratch/cpu\nrm -rf "$RUN"',
+		'declare -n RUN=OTHER\nRUN=.scratch/cpu\nrm -rf "$RUN"',
+		'source setup.sh\nRUN=.scratch/cpu\nrm -rf "$RUN"',
+		'trap cleanup DEBUG\nRUN=.scratch/cpu\nrm -rf "$RUN"',
+		'set -a\nRUN=.scratch/cpu\nrm -rf "$RUN"',
+		'time readonly RUN=/etc\nRUN=.scratch/cpu\nrm -rf "$RUN"',
+		'RUN=.scratch/cpu\nrm -rf "$RUN" \\\n/etc/clawd-permission-test',
+		'RUN=.scratch/cpu\nrm -rf "$RUN"\necho "$(date)"',
+		'echo ready \\\nRUN=.scratch/cpu\nrm -rf "$RUN"',
+	])("does not infer an ambiguous or unsupported variable: %s", (command) => {
+		for (const invocation of extractRmInvocations(command)) {
+			for (const target of invocation.targets) {
+				if (target.raw.includes("$")) expect(target.literal).toBe(false);
+			}
+		}
+	});
+
+	it.each([
+		"DIRSTACK", "GROUPS", "FUNCNAME", "BASH_SOURCE", "BASH_CMDS", "BASHPID",
+		"BASH_SUBSHELL", "LINENO", "RANDOM", "SRANDOM", "SECONDS", "EPOCHSECONDS",
+		"EPOCHREALTIME", "EPOCHMONO", "HISTCMD", "PIPESTATUS", "SHELLOPTS", "UID",
+		"EUID", "PPID", "OPTIND", "_", "PWD", "OLDPWD", "SHLVL",
+	])("does not infer Bash-managed variable %s", (name) => {
+		const command = `${name}=.scratch/cpu\nrm -rf "$${name}"`;
+		expect(extractRmInvocations(command)[0]?.targets[0]?.literal).toBe(false);
+	});
+
+	it.each(["\u00a0", "\r", "\v", "\f", "\u2003", "\ufeff"])(
+		"does not treat unsupported whitespace %j as a shell boundary", (space) => {
+			for (const command of [
+				`RUN=.git\n${space}RUN=.scratch/cpu\nrm -rf "$RUN"`,
+				`RUN=.git\nRUN=.scratch/cpu${space}\nrm -rf "$RUN"`,
+				`RUN=.scratch/cpu\nrm -rf ${space}"$RUN"`,
+			]) {
+				expect(extractRmInvocations(command).at(-1)?.targets[0]?.literal).not.toBe(true);
+			}
+		},
+	);
+
+	it("does not infer values after history evaluation", () => {
+		const command = 'history -s "readonly RUN"\nRUN=.git\nfc -s\nRUN=.scratch/cpu\nrm -rf "$RUN"';
+		expect(extractRmInvocations(command).at(-1)?.targets[0]?.literal).toBe(false);
+	});
+
+	it.each([
+		'RUN=.git\njobs -x readonly RUN\nRUN=.scratch/cpu\nrm -rf "$RUN"',
+		'jobs -x cd .git\nRUN=objects\nrm -rf "$RUN"',
+		'RUN=.git\njobs -x eval "readonly RUN"\nRUN=.scratch/cpu\nrm -rf "$RUN"',
+	])("does not infer values through jobs command execution: %s", (command) => {
+		expect(extractRmInvocations(command).at(-1)?.targets[0]?.literal).toBe(false);
+	});
+
+	it("does not retain assignments between tool calls", () => {
+		extractRmInvocations("RUN=.scratch/cpu");
+		expect(extractRmInvocations('rm -rf "$RUN"')[0]?.targets[0]?.literal).toBe(false);
+	});
+
 	it("extracts supported recursive flag forms and targets", () => {
 		for (const command of [
 			"rm -rf foo",
