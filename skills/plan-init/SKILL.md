@@ -66,11 +66,26 @@ Propose updates to the project's actual instruction file (`AGENTS.md`, `CLAUDE.m
 Write the plan to `.scratch/plans/todo/YYYY-MM-DD-HHMMSS-mvp.md`. Include the agreed architecture and project-setup files in the first phase when they are needed; do not assume Makefile or CLAUDE.md.
 
 ```markdown
-# MVP Implementation Plan
+# MVP: [what we're building, in plain words]
 
-**Goal:** [one sentence]
-**Non-goals:** [what we're NOT building]
-**Approach:** [2-3 sentences]
+## For you
+
+[2-3 sentences: what we're building, for whom, and what we're NOT building]
+
+**Needs your call**
+1. [A real choice, with my recommendation]
+
+**Assumptions**
+2. [Only ones that would change the plan if wrong]
+
+**Risks**
+- [Only real ones]
+
+---
+
+## Execution detail (you don't need to review this)
+
+[Approach, background, and minor defaults I chose]
 
 ## File Map
 [Which files will be created/modified and their responsibilities]
@@ -87,6 +102,7 @@ Phase checklists: one `- [ ]` per phase, ticked `- [x]` when done and verified.
 ```
 
 **Phase guidelines:**
+- The "For you" section holds only what needs the user's judgment and fits on one screen. Number its items in one sequence so replies like "3: yes" are unambiguous.
 - Each phase should be a small, logically complete chunk
 - Include test expectations inline — write a failing regression first when behavior could regress; use applicable syntax/build/docs validation for genuinely non-behavioral work
 - Include the project's actual verification command (`make check` when present)
@@ -94,11 +110,11 @@ Phase checklists: one `- [ ]` per phase, ticked `- [x]` when done and verified.
 
 ## Step 6: Annotation Loop
 
-Tell the user: "Review the plan and add `n2c:` annotations anywhere you have feedback."
+Post the "For you" items in chat with the same numbers. The user can reply by number in chat or add `n2c:` annotations in the file.
 
 Then iterate:
-1. User adds `n2c:` comments to the plan file
-2. You read them, respond, update the plan
+1. Read their answers (and the file, if they annotated it)
+2. Respond to each, then update the plan: write chat answers back into it and delete resolved annotations
 3. Repeat until the user approves
 
 **Watch for over-engineering:** If any task touches more than ~3 files or introduces a new abstraction layer, flag it. Ask: "Is this complexity necessary for the MVP?"

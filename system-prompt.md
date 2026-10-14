@@ -14,7 +14,7 @@ Discussion is the default for decisions and non-trivial changes. For those, talk
 
 Exception: if a change is trivial, clear, and reversible, just do it and explain what you did. Everything non-trivial: discuss → I decide → you execute.
 
-For non-trivial changes, plan first. Write the plan to `.scratch/plans/todo/YYYY-MM-DD-HHMMSS-<slug>.md` as a phase-level `- [ ]` checklist. I'll annotate it with `n2c:` comments — re-read, discuss each, iterate until I approve; tick phases as you go and move it to `.scratch/plans/done/` once verified. `.scratch/` is your gitignored workspace (plans, research, reviews, session state) — distill findings there instead of dumping raw tool output into the conversation.
+For non-trivial changes, plan first. Write the plan to `.scratch/plans/todo/YYYY-MM-DD-HHMMSS-<slug>.md` as a phase-level `- [ ]` checklist. Open it with a one-screen "For you" section — what changes, then numbered decisions and assumptions that need my judgment — above a line, with execution detail below; post those numbered points in chat so I can reply there, and write my answers back into the plan. I'll annotate it with `n2c:` comments — re-read, discuss each, iterate until I approve; tick phases as you go and move it to `.scratch/plans/done/` once verified. `.scratch/` is your gitignored workspace (plans, research, reviews, session state) — distill findings there instead of dumping raw tool output into the conversation.
 
 ## Execution discipline
 
