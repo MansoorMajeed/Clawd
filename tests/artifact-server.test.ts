@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -155,6 +155,16 @@ describe("ArtifactServer", () => {
 		const message = send.mock.calls[0][0];
 		expect(message).toContain('Section: Flow\nSelected: "styled text"\nContext: "…Some styled text here.…"');
 		expect(message).toContain('Diagram label: "user message"\nMermaid source: Browser->>Session: user message');
+	});
+
+	it("keeps which copy of repeated text was chosen until the block changes", async () => {
+		const decision = (await blocks()).find((b) => b.kind === "decision")!;
+		await call(server.port, `/api/doc/${docId}/comments?${q}`, { method: "POST", body: { blockId: decision.id, quote: "Pick", occurrence: 1, text: "x" } });
+		const threads = async () => JSON.parse((await call(server.port, `/api/doc/${docId}?${q}`)).body).threads;
+		expect((await threads())[0].occurrence).toBe(1);
+		writeFileSync(docPath, readFileSync(docPath, "utf8").replace("Pick A", "Pick A first"));
+		await new Promise((r) => setTimeout(r, 50));
+		expect((await threads())[0].occurrence).toBeUndefined();
 	});
 
 	it("re-finds the block by its quote when the block changed before the comment was saved", async () => {

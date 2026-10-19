@@ -157,6 +157,8 @@ mark.hl {
 	border-radius: 2px;
 }
 
+mark.hl-pending { background: var(--accent-soft); border-bottom-style: dashed; }
+
 pre.mermaid svg text, pre.mermaid svg .nodeLabel, pre.mermaid svg .edgeLabel { cursor: pointer; }
 pre.mermaid svg text:hover, pre.mermaid svg .nodeLabel:hover, pre.mermaid svg .edgeLabel:hover { fill: var(--accent); color: var(--accent); }
 

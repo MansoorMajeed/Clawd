@@ -14,6 +14,8 @@ export interface Anchor {
 	context?: string;
 	/** For diagram labels: the matching Mermaid source line(s). */
 	diagramSource?: string;
+	/** Which copy of the quote in the original block (0-based), for repeated text. */
+	occurrence?: number;
 	/** Set by the agent (artifact_reply moved_to) after rewriting the commented text. */
 	movedTo?: string;
 }

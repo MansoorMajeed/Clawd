@@ -282,6 +282,7 @@ export class ArtifactServer {
 			} else if (typeof body.context === "string" && normalize(body.context)) {
 				anchor.context = normalize(body.context).slice(0, MAX_QUOTE);
 			}
+			if (Number.isInteger(body.occurrence) && body.occurrence > 0 && body.occurrence < 1000) anchor.occurrence = body.occurrence;
 			return { threadId: doc.store.addComment({ anchor, text }).id };
 		}
 		if (action[0] === "send" && action.length === 1) {
@@ -316,16 +317,21 @@ export class ArtifactServer {
 			title: rendered.title,
 			hasMermaid: rendered.hasMermaid,
 			blocks: rendered.blocks.map(({ id, kind, html }) => ({ id, kind, html })),
-			threads: doc.store.threads().map((t) => ({
+			threads: doc.store.threads().map((t) => {
+				const attachment = attach(t.anchor, rendered.blocks);
+				const unchanged = !t.anchor.movedTo && attachment.blockId === t.anchor.blockId;
+				return {
 				id: t.id,
 				status: threadStatus(t),
-				attachment: attach(t.anchor, rendered.blocks),
+				attachment,
 				quote: t.anchor.quote,
 				highlight: t.anchor.movedTo ?? t.anchor.quote,
 				context: t.anchor.movedTo ? undefined : t.anchor.context,
+				occurrence: unchanged ? t.anchor.occurrence : undefined,
 				diagram: t.anchor.diagramSource !== undefined,
 				messages: t.messages,
-			})),
+				};
+			}),
 		};
 	}
 

@@ -80,7 +80,8 @@
 	}
 
 	/** Wrap the quote (located via its context when possible) in <mark>; returns the first mark. */
-	function highlight(root, quote, context) {
+	/** Whitespace-collapsed text of root, with each character's source [node, offset]. */
+	function normalizedText(root) {
 		const map = [];
 		let norm = "";
 		for (const node of textNodes(root)) {
@@ -96,9 +97,22 @@
 				}
 			}
 		}
+		return { norm, map };
+	}
+
+	function highlight(root, quote, context, cls = "hl", occurrence) {
+		const { norm, map } = normalizedText(root);
 		const q = normalizeText(quote);
 		let start = -1;
-		if (context) {
+		if (q && occurrence !== undefined) {
+			for (let n = 0, p = norm.indexOf(q); p >= 0; n++, p = norm.indexOf(q, p + 1)) {
+				if (n === occurrence) {
+					start = p;
+					break;
+				}
+			}
+		}
+		if (start < 0 && context) {
 			const c = normalizeText(context);
 			const ci = norm.indexOf(c);
 			const qi = ci >= 0 ? norm.indexOf(q, ci) : -1;
@@ -116,7 +130,7 @@
 		for (const [node, [from, to]] of segments) {
 			const middle = node.splitText(from);
 			middle.splitText(to - from + 1);
-			const mark = h("mark", { class: "hl" });
+			const mark = h("mark", { class: cls });
 			middle.replaceWith(mark);
 			mark.append(middle);
 			first ??= mark;
@@ -300,15 +314,21 @@
 		const body = h("div", { class: "block-body" });
 		body.innerHTML = b.html; // Server-rendered with raw HTML escaped.
 		const section = h("section", { class: `block block-${b.kind}${threads.length ? " has-threads" : ""}`, "data-block": b.id }, body);
-		for (const t of threads) {
-			const el = thread(t);
-			const mark = t.attachment.status === "exact" && !t.diagram && t.status !== "resolved" ? highlight(body, t.quote, t.context) : undefined;
+		/** Put el right after the highlighted text's line (inside list items), else at the end of the block. */
+		const place = (el, mark) => {
 			const host = mark && (mark.closest("li") ?? mark.closest("p, h1, h2, h3, h4, h5, h6, pre"));
 			if (host?.tagName === "LI") host.append(el);
 			else if (host && !host.closest("table")) host.after(el);
 			else section.append(el);
+		};
+		for (const t of threads) {
+			const highlighted = t.attachment.status === "exact" && !t.diagram && t.status !== "resolved";
+			place(thread(t), highlighted ? highlight(body, t.highlight ?? t.quote, t.context, "hl", t.occurrence) : undefined);
 		}
-		for (const [key, anchor] of state.pending) if (anchor.blockId === b.id) section.append(composer(key, "Comment…"));
+		for (const [key, anchor] of state.pending) {
+			if (anchor.blockId !== b.id) continue;
+			place(composer(key, "Comment…"), anchor.label ? undefined : highlight(body, anchor.quote, anchor.context, "hl hl-pending", anchor.occurrence));
+		}
 		return section;
 	}
 
@@ -326,16 +346,37 @@
 		return el?.closest(".block-body") ? el : undefined;
 	}
 
-	/** An element's own text: list items without their nested lists, table rows as "a | b". */
+	/** An element's own text: list items without their nested lists, table cells joined by spaces. */
 	function ownText(el) {
-		if (el.tagName === "TR") return [...el.cells].map((c) => normalizeText(c.textContent)).join(" | ");
+		if (el.tagName === "TR") return [...el.cells].map((c) => normalizeText(c.textContent)).join(" ");
 		const clone = el.cloneNode(true);
 		clone.querySelectorAll("ul, ol, .thread, .composer").forEach((n) => n.remove());
 		return normalizeText(clone.textContent);
 	}
 
+	/** Text around a span of the block, and which copy of the quote it is, so repeated text can be told apart. */
+	function locate(body, quote, startNode, startOffset, length) {
+		let full = "";
+		let offset = 0;
+		for (const node of textNodes(body)) {
+			if (node === startNode) offset = full.length + startOffset;
+			full += node.data;
+		}
+		const { norm, map } = normalizedText(body);
+		let at = map.findIndex(([node, i]) => node === startNode && i >= startOffset);
+		if (at < 0) at = norm.length;
+		let occurrence = 0;
+		for (let p = norm.indexOf(quote); p >= 0 && p < at; p = norm.indexOf(quote, p + 1)) occurrence++;
+		return { context: normalizeText(full.slice(Math.max(0, offset - 80), offset + length + 80)), occurrence };
+	}
+
 	function commentOnLine() {
-		if (lineTarget) openNew({ blockId: blockIdOf(lineTarget), quote: ownText(lineTarget) });
+		if (!lineTarget) return;
+		const own = textNodes(lineTarget).filter((n) => lineTarget.tagName !== "LI" || n.parentElement.closest("li") === lineTarget);
+		const body = lineTarget.closest(".block-body");
+		const length = own.reduce((sum, n) => sum + n.data.length, 0);
+		const quote = ownText(lineTarget);
+		openNew({ blockId: blockIdOf(lineTarget), quote, ...(own.length && body ? locate(body, quote, own[0], 0, length) : {}) });
 	}
 
 	function docOffset(rect) {
@@ -346,6 +387,8 @@
 	app.addEventListener("mousemove", (e) => {
 		if (e.target === lineAdd) return;
 		const el = commentable(e.target);
+		// Over margins and gaps (e.g. on the way to the +), keep the current line; hide only over other UI.
+		if (!el && !(e.target instanceof Element && e.target.closest(".thread, .composer, .topbar, .sidebar, .outdated"))) return;
 		if (el === lineTarget) return;
 		lineTarget = el;
 		lineAdd.hidden = !el;
@@ -368,17 +411,20 @@
 		const body = startEl.closest(".block-body");
 		if (!body) return;
 		if (!body.contains(range.endContainer)) range.setEnd(body, body.childNodes.length);
-		const raw = range.toString();
+		// Build the quote from document text only, skipping threads placed between lines.
+		let raw = "";
+		let startNode;
+		let startOffset = 0;
+		for (const node of textNodes(body)) {
+			if (!range.intersectsNode(node)) continue;
+			const from = node === range.startContainer ? range.startOffset : 0;
+			const to = node === range.endContainer ? range.endOffset : node.data.length;
+			if (!startNode) [startNode, startOffset] = [node, from];
+			raw += node.data.slice(from, to);
+		}
 		const quote = normalizeText(raw);
 		if (!quote) return;
-		let full = "";
-		let offset = 0;
-		for (const node of textNodes(body)) {
-			if (node === range.startContainer) offset = full.length + range.startOffset;
-			full += node.data;
-		}
-		const context = normalizeText(full.slice(Math.max(0, offset - 80), offset + raw.length + 80));
-		selection = { blockId: blockIdOf(body), quote, context };
+		selection = { blockId: blockIdOf(body), quote, ...locate(body, quote, startNode, startOffset, raw.length) };
 		const rects = range.getClientRects();
 		const last = docOffset(rects[rects.length - 1] ?? range.getBoundingClientRect());
 		selAdd.style.top = `${last.bottom + 6}px`;
@@ -440,6 +486,8 @@
 
 		const byBlock = new Map();
 		const outdated = [];
+		const blockIds = new Set(doc?.blocks.map((b) => b.id));
+		const stranded = [...state.pending].filter(([, anchor]) => !blockIds.has(anchor.blockId));
 		for (const t of doc?.threads ?? []) {
 			if (t.attachment.status === "outdated") outdated.push(t);
 			else {
@@ -454,6 +502,13 @@
 				? h("div", { class: "empty" }, "Loading…")
 				: [
 						h("article", { class: "doc" }, doc.blocks.map((b) => block(b, byBlock.get(b.id) ?? [])), lineAdd, selAdd),
+						stranded.length > 0 &&
+							h(
+								"section",
+								{ class: "outdated" },
+								h("h2", {}, "Comments in progress on text that changed"),
+								stranded.map(([key]) => composer(key, "Comment…")),
+							),
 						outdated.length > 0 &&
 							h("section", { class: "outdated" }, h("h2", {}, "Outdated threads"), outdated.map(thread)),
 					];
