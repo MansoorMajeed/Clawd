@@ -19,7 +19,7 @@ This is **not** a sandboxed agent. Pi gives the LLM direct bash access with no b
 ```
 Pi (main agent, Opus)
 ├── Pi's native tools and commands
-├── 17 active extension entrypoints (safety, review, context, displays, utilities)
+├── 18 active extension entrypoints (safety, review, context, displays, utilities)
 └── 19 active skills (/skill:plan, /skill:ship, /skill:debug, etc.)
 ```
 
@@ -64,7 +64,15 @@ Existing extension statuses (including GPT quota, reset time, and git status) re
 
 ## Active extensions
 
-The 17 active entrypoints provide the workflow prompt; permission and read-before-edit guards; DuckDuckGo search; interactive review; context and session analytics; session-name suggestions; a `/clear` reminder for Pi's native `/new`; `/btw`; `/split-fork`; desktop notifications; and the custom footer/status displays for GPT quota, git state, session age, and response throughput. Extension commands are `/add-dir`, `/add-dir-read`, `/review`, `/end-review`, `/context`, `/session-breakdown`, `/suggest-name`, `/clear`, `/btw`, and `/split-fork`.
+The 18 active entrypoints provide the workflow prompt; permission and read-before-edit guards; DuckDuckGo search; interactive review; a browser viewer for commenting on plans; context and session analytics; session-name suggestions; a `/clear` reminder for Pi's native `/new`; `/btw`; `/split-fork`; desktop notifications; and the custom footer/status displays for GPT quota, git state, session age, and response throughput. Extension commands are `/add-dir`, `/add-dir-read`, `/review`, `/end-review`, `/context`, `/session-breakdown`, `/suggest-name`, `/clear`, `/btw`, `/split-fork`, and `/artifact`.
+
+### Artifact viewer
+
+`/artifact <file>` (or the agent's `artifact_open` tool) renders a Markdown document in your browser. Hover a block and click **+** to comment. Comments stay as drafts until you send one or **Send all**; they arrive in the same terminal session as a user message tagged `[artifact viewer · <file> · thread #N]`. The agent answers each thread with `artifact_reply`, and edits the Markdown when the document should change. The page reloads live and re-attaches threads; threads whose text changed are marked "may be outdated" or moved to an outdated tray. `/artifact` lists open documents and `/artifact close` stops the server, which also stops when the session ends. The Markdown file stays the real document, so there is nothing to convert back.
+
+Documents support GitHub-style callouts (`> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`), `> [!DECISION]` cards, tables, and Mermaid diagrams (bundled, works offline). Thread state and the server registry live in `~/.pi/agent/artifacts/`; the sidebar lists documents from every running session.
+
+Security: each session's server listens on `127.0.0.1` only and requires a random token in the URL. Anyone holding that URL can send prompts into the session, so don't share it. Other sessions' URLs (with their tokens) are in the owner-only registry and the sidebar. Raw HTML in documents and all thread text are shown as text, never executed, and a Content-Security-Policy allows only the bundled scripts.
 
 `/clear` only reminds users to use Pi's native `/new` command; it does not alias `/new` or change the current session. The old session-reset behavior and `multi-edit` override remain removed. Use Pi's native `edit` tool instead; it accepts multiple disjoint replacements in one file but does not provide cross-file batches or Codex-style patch application.
 
