@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { createRequire } from "node:module";
 import { basename, dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { attach } from "./anchor";
+import { attach, occurrenceOf } from "./anchor";
 import { formatSendMessage } from "./message";
 import { liveEntries, removeEntry, writeEntry } from "./registry";
 import { escapeHtml, renderDocument } from "./render";
@@ -252,9 +252,11 @@ export class ArtifactServer {
 				return { threadId: doc.store.addComment({ threadId, text }).id };
 			}
 			const blockId = typeof body.blockId === "string" ? body.blockId : "";
-			const block = renderDocument(readFileSync(doc.path, "utf8")).blocks.find((b) => b.id === blockId);
+			const { blocks } = renderDocument(readFileSync(doc.path, "utf8"));
+			const block = blocks.find((b) => b.id === blockId);
 			if (!block) throw new HttpError(409, "That section changed; reload and try again");
-			return { threadId: doc.store.addComment({ anchor: { heading: block.heading, text: block.text }, text }).id };
+			const anchor = { heading: block.heading, text: block.text, occurrence: occurrenceOf(blocks, block) };
+			return { threadId: doc.store.addComment({ anchor, text }).id };
 		}
 		if (action[0] === "send" && action.length === 1) {
 			const drafts = doc.store.takeDrafts(threadId);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { attach } from "../extensions/artifact/anchor";
+import { attach, occurrenceOf } from "../extensions/artifact/anchor";
 import { renderDocument } from "../extensions/artifact/render";
 
 const DOC = `# Plan title
@@ -121,6 +121,15 @@ describe("attach", () => {
 		const edited = renderDocument(DOC.replace("Ship on Friday", "Ship on Monday"));
 		const heading = edited.blocks.find((b) => b.kind === "heading" && b.heading === "decisions")!;
 		expect(attach(anchor, edited.blocks)).toEqual({ status: "heading", blockId: heading.id });
+	});
+
+	it("keeps a comment on the second of two identical blocks on that copy", () => {
+		const dup = renderDocument("## Notes\n\nSame.\n\nSame.\n");
+		const second = dup.blocks[2];
+		const dupAnchor = { heading: second.heading, text: second.text, occurrence: occurrenceOf(dup.blocks, second) };
+		expect(attach(dupAnchor, dup.blocks)).toEqual({ status: "exact", blockId: second.id });
+		const edited = renderDocument("## Notes\n\nIntro.\n\nSame.\n\nSame.\n");
+		expect(attach(dupAnchor, edited.blocks)).toEqual({ status: "exact", blockId: edited.blocks[3].id });
 	});
 
 	it("marks the thread outdated when the heading is gone too", () => {
