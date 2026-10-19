@@ -12,7 +12,7 @@ interface Res {
 	body: string;
 }
 
-function call(port: number, path: string, opts: { method?: string; body?: unknown; host?: string } = {}): Promise<Res> {
+function call(port: number, path: string, opts: { method?: string; body?: unknown; host?: string; cookie?: string } = {}): Promise<Res> {
 	return new Promise((resolve, reject) => {
 		const payload = opts.body === undefined ? undefined : JSON.stringify(opts.body);
 		const req = request(
@@ -23,6 +23,7 @@ function call(port: number, path: string, opts: { method?: string; body?: unknow
 				method: opts.method ?? "GET",
 				headers: {
 					host: opts.host ?? `127.0.0.1:${port}`,
+					...(opts.cookie ? { cookie: opts.cookie } : {}),
 					...(payload ? { "content-type": "application/json" } : {}),
 				},
 			},
@@ -102,6 +103,14 @@ describe("ArtifactServer", () => {
 		expect(res.headers["content-security-policy"]).toContain("script-src 'self'");
 		expect(res.headers["content-security-policy"]).toContain("default-src 'none'");
 		expect(res.headers["referrer-policy"]).toBe("no-referrer");
+	});
+
+	it("applies a saved theme cookie before the page renders", async () => {
+		const page = (cookie?: string) => call(server.port, `/doc/${docId}?${q}`, { cookie }).then((r) => r.body);
+		expect(await page("other=1; artifact-theme=dark")).toContain('<html lang="en" data-theme="dark">');
+		expect(await page("artifact-theme=light")).toContain('<html lang="en" data-theme="light">');
+		expect(await page("artifact-theme=<script>")).toContain('<html lang="en">');
+		expect(await page()).toContain('<html lang="en">');
 	});
 
 	it("sends all drafts as one combined message, then one at a time", async () => {

@@ -124,6 +124,21 @@
 		return first;
 	}
 
+	// ---------- theme ----------
+
+	const systemDark = matchMedia("(prefers-color-scheme: dark)");
+	const currentTheme = () => document.documentElement.dataset.theme || (systemDark.matches ? "dark" : "light");
+
+	function toggleTheme() {
+		const next = currentTheme() === "dark" ? "light" : "dark";
+		document.documentElement.dataset.theme = next;
+		// A cookie, not localStorage: cookies ignore the port, so every session's viewer shares it.
+		document.cookie = `artifact-theme=${next}; Max-Age=31536000; Path=/; SameSite=Strict`;
+		render();
+	}
+
+	systemDark.addEventListener("change", () => !document.documentElement.dataset.theme && render());
+
 	// ---------- data ----------
 
 	async function load() {
@@ -457,6 +472,7 @@
 						h("span", { class: "status-dot" }),
 						h("span", { class: "path" }, doc?.path ?? ""),
 						h("span", { class: "spacer" }),
+						h("button", { class: "btn btn-quiet", onclick: toggleTheme }, currentTheme() === "dark" ? "Light mode" : "Dark mode"),
 						h("button", { class: "btn btn-primary", disabled: drafts === 0, onclick: sendAll }, `Send all (${drafts})`),
 					),
 					main,
@@ -485,16 +501,15 @@
 		mermaidReady ??= new Promise((resolve, reject) => {
 			const script = document.createElement("script");
 			script.src = `/assets/mermaid.js?token=${encodeURIComponent(token)}`;
-			script.onload = () => {
-				const dark = matchMedia("(prefers-color-scheme: dark)").matches;
-				window.mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: dark ? "dark" : "neutral" });
-				resolve(window.mermaid);
-			};
+			script.onload = () => resolve(window.mermaid);
 			script.onerror = () => reject(new Error("Could not load Mermaid"));
 			document.head.append(script);
 		});
 		mermaidReady
-			.then((mermaid) => mermaid.run({ nodes: document.querySelectorAll("pre.mermaid:not([data-processed])") }))
+			.then((mermaid) => {
+				mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: currentTheme() === "dark" ? "dark" : "neutral" });
+				return mermaid.run({ nodes: document.querySelectorAll("pre.mermaid:not([data-processed])") });
+			})
 			.catch((error) => toast(`Diagram error: ${error.message}`));
 	}
 

@@ -220,7 +220,7 @@ export class ArtifactServer {
 		if (method === "GET" && parts[0] === "doc" && parts.length === 2) {
 			const doc = this.doc(parts[1]);
 			res.writeHead(200, { ...SECURITY_HEADERS, "content-type": "text/html; charset=utf-8" });
-			res.end(this.shell(doc));
+			res.end(this.shell(doc, /(?:^|;\s*)artifact-theme=(light|dark)(?:;|$)/.exec(req.headers.cookie ?? "")?.[1]));
 			return;
 		}
 		if (method === "GET" && url.pathname === "/api/ping") {
@@ -329,10 +329,10 @@ export class ArtifactServer {
 		};
 	}
 
-	private shell(doc: OpenDoc): string {
+	private shell(doc: OpenDoc, theme?: string): string {
 		const q = `token=${this.token}`;
 		return `<!doctype html>
-<html lang="en">
+<html lang="en"${theme ? ` data-theme="${theme}"` : ""}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

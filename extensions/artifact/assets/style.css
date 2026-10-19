@@ -1,50 +1,32 @@
 :root {
-	--paper: #f6f1e7;
-	--paper-raised: #fbf8f1;
-	--ink: #1f1b16;
-	--muted: #6b6256;
-	--rule: #e2d9c8;
-	--accent: #b4532a;
-	--accent-ink: #fff8f2;
-	--accent-soft: #f3e1d6;
-	--agent: #2f5d62;
-	--agent-soft: #e1ecea;
-	--note: #2f5d8a;
-	--tip: #3d7a4f;
-	--important: #6a4c93;
-	--warning: #a86b00;
-	--caution: #a3322b;
-	--code-bg: #efe8da;
-	--shadow: 0 1px 2px rgba(60, 40, 20, 0.06), 0 8px 24px rgba(60, 40, 20, 0.06);
+	/* Follows the system theme unless the page sets data-theme (saved in a cookie). */
+	color-scheme: light dark;
+	--paper: light-dark(#f6f1e7, #191613);
+	--paper-raised: light-dark(#fbf8f1, #221e1a);
+	--ink: light-dark(#1f1b16, #ece4d6);
+	--muted: light-dark(#6b6256, #a59a8a);
+	--rule: light-dark(#e2d9c8, #3a332b);
+	--accent: light-dark(#b4532a, #e07a4b);
+	--accent-ink: light-dark(#fff8f2, #1c120c);
+	--accent-soft: light-dark(#f3e1d6, #3a2519);
+	--agent: light-dark(#2f5d62, #7fb7b0);
+	--agent-soft: light-dark(#e1ecea, #1f2e2c);
+	--note: light-dark(#2f5d8a, #79a7d6);
+	--tip: light-dark(#3d7a4f, #7fbf8f);
+	--important: light-dark(#6a4c93, #b39ddb);
+	--warning: light-dark(#a86b00, #e0aa4a);
+	--caution: light-dark(#a3322b, #e57a72);
+	--code-bg: light-dark(#efe8da, #26221d);
+	--shadow-color: light-dark(rgba(60, 40, 20, 0.06), rgba(0, 0, 0, 0.28));
+	--shadow: 0 1px 2px var(--shadow-color), 0 8px 24px var(--shadow-color);
 	--serif: Charter, "Iowan Old Style", "Source Serif Pro", "Palatino Linotype", Georgia, serif;
 	--sans: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
 	--mono: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
 	--radius: 10px;
-	color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-	:root {
-		--paper: #191613;
-		--paper-raised: #221e1a;
-		--ink: #ece4d6;
-		--muted: #a59a8a;
-		--rule: #3a332b;
-		--accent: #e07a4b;
-		--accent-ink: #1c120c;
-		--accent-soft: #3a2519;
-		--agent: #7fb7b0;
-		--agent-soft: #1f2e2c;
-		--note: #79a7d6;
-		--tip: #7fbf8f;
-		--important: #b39ddb;
-		--warning: #e0aa4a;
-		--caution: #e57a72;
-		--code-bg: #26221d;
-		--shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.25);
-		color-scheme: dark;
-	}
-}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
 
 * { box-sizing: border-box; }
 
