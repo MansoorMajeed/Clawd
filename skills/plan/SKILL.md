@@ -35,7 +35,9 @@ Write to the plans `todo/` directory — `.scratch/plans/todo/YYYY-MM-DD-HHMMSS-
 [2-3 sentences: what changes, why, and what stays the same]
 
 **Needs your call**
-1. [A real choice, with my recommendation]
+
+> [!DECISION]
+> 1. [A real choice, with my recommendation]
 
 **Assumptions**
 2. [Only ones that would change the plan if wrong]
@@ -68,7 +70,7 @@ Plans are phase checklists: one `- [ ]` per phase, ticked `- [x]` when the phase
 ```
 
 **Guidelines:**
-- The "For you" section holds only what needs the user's judgment and fits on one screen. Number its items in one sequence so replies like "3: yes" are unambiguous. Minor defaults go below the line.
+- The "For you" section holds only what needs the user's judgment and fits on one screen. Number its items in one sequence so replies like "3: yes" are unambiguous. Write each "Needs your call" item as its own `> [!DECISION]` block so it renders as a commentable card in the artifact viewer. Minor defaults go below the line.
 - Each phase: a logical chunk with specific files and a verification step
 - Keep boxes phase-level (coarse-grained progress), not per-micro-step
 - Include test expectations inline. Require a failing regression first when behavior could regress; for genuinely non-behavioral changes, name the applicable syntax/build/docs validation instead. Do not exempt TypeScript, configuration, or Markdown categorically.
@@ -77,7 +79,7 @@ Plans are phase checklists: one `- [ ]` per phase, ticked `- [x]` when the phase
 
 ## Step 4: Annotation Loop
 
-Post the "For you" items in chat with the same numbers, so the user can reply by number there without opening the file. They can also add `n2c:` annotations in the file. When they respond:
+Post the "For you" items in chat with the same numbers, so the user can reply by number there without opening the file. For long plans, also open the file with `artifact_open` so the user can read and comment in the browser; short plans stay in chat. Answer browser comments with `artifact_reply`. They can also add `n2c:` annotations in the file. When they respond:
 1. **Re-read the file** if they annotated it — annotations live in the file, not in chat
 2. **Discuss each point** — respond to every answer and `n2c:` comment, get alignment
 3. **Update the plan** — write chat answers back into the plan (a fresh session executes from the file), fold resolved annotations into the text and delete them, iterate until approved
