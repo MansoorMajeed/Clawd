@@ -35,6 +35,8 @@ export function escapeHtml(text: string): string {
 
 function safeUrl(href: string): string | undefined {
 	const trimmed = href.trim();
+	// Browsers strip tabs and newlines inside URLs, so "java\tscript:" would still run.
+	if (/[\u0000-\u001F\u007F]/.test(trimmed)) return undefined;
 	if (/^(https?:|mailto:|#|\/|\.)/i.test(trimmed)) return trimmed;
 	if (!/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return trimmed;
 	return undefined;

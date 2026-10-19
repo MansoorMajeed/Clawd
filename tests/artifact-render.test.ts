@@ -75,6 +75,15 @@ describe("renderDocument", () => {
 		expect(html).toContain('rel="noopener noreferrer"');
 	});
 
+	it("drops javascript URLs disguised with control characters", () => {
+		for (const sep of ["\t", "\r", "\n"]) {
+			const md = `[a](<java${sep}script:alert(1)>) ![b](<java${sep}script:x>)\n\n> [!NOTE]\n> [c](<java${sep}script:y>)`;
+			const html = renderDocument(md).blocks.map((b) => b.html).join("");
+			expect(html).not.toMatch(/href=|src=/);
+		}
+		expect(renderDocument("[rel](./docs/x.md)").blocks[0].html).toContain('href="./docs/x.md"');
+	});
+
 	it("emits Mermaid fences as escaped diagram placeholders", () => {
 		const doc = renderDocument("```mermaid\ngraph TD; A-->B<script>\n```");
 		expect(doc.blocks[0].kind).toBe("mermaid");
