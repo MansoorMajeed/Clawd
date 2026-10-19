@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -138,6 +138,21 @@ describe("ArtifactServer", () => {
 			writeFileSync(docPath, "# Plan\n\nEdited.\n"),
 		);
 		expect(event).toBe("changed");
+	});
+
+	it("shares one listener between concurrent starts", async () => {
+		const fresh = new ArtifactServer({ root: join(dir, "race"), cwd: dir, send });
+		await Promise.all([fresh.start(), fresh.start()]);
+		fresh.open(docPath);
+		expect(readdirSync(join(dir, "race", "servers"))).toHaveLength(1);
+		await fresh.stop();
+		expect(readdirSync(join(dir, "race", "servers"))).toHaveLength(0);
+	});
+
+	it("survives file-watcher errors", async () => {
+		const watcher = (server as any).docs.get(docId).watcher;
+		expect(() => watcher.emit("error", new Error("EIO"))).not.toThrow();
+		expect((await call(server.port, `/api/doc/${docId}?${q}`)).status).toBe(200);
 	});
 
 	it("stops idempotently", async () => {

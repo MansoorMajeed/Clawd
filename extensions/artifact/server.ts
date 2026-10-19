@@ -58,6 +58,7 @@ export class ArtifactServer {
 	readonly token = randomBytes(32).toString("hex");
 	port = 0;
 	private server?: Server;
+	private starting?: Promise<void>;
 	private readonly docs = new Map<string, OpenDoc>();
 
 	constructor(private readonly options: ArtifactServerOptions) {}
@@ -66,8 +67,15 @@ export class ArtifactServer {
 		return this.server !== undefined;
 	}
 
-	async start(): Promise<void> {
-		if (this.server) return;
+	start(): Promise<void> {
+		if (this.server) return Promise.resolve();
+		this.starting ??= this.listen().finally(() => {
+			this.starting = undefined;
+		});
+		return this.starting;
+	}
+
+	private async listen(): Promise<void> {
 		const server = createServer((req, res) => {
 			this.handle(req, res).catch((error: unknown) => {
 				const status = error instanceof HttpError ? error.status : 500;
@@ -86,6 +94,7 @@ export class ArtifactServer {
 	}
 
 	async stop(): Promise<void> {
+		await this.starting?.catch(() => {});
 		const server = this.server;
 		this.server = undefined;
 		for (const doc of this.docs.values()) {
@@ -112,6 +121,10 @@ export class ArtifactServer {
 					if (file && file.toString() !== name) return;
 					if (doc.timer) clearTimeout(doc.timer);
 					doc.timer = setTimeout(() => this.notify(doc), 150);
+				});
+				doc.watcher.on("error", () => {
+					doc.watcher?.close();
+					doc.watcher = undefined;
 				});
 			} catch {
 				// The page still works; it just won't refresh on its own.
