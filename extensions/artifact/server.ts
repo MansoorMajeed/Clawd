@@ -1,12 +1,12 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { existsSync, readFileSync, watch, type FSWatcher } from "node:fs";
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { existsSync, mkdirSync, readFileSync, watch, writeFileSync, type FSWatcher } from "node:fs";
+import { createServer, request, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { createRequire } from "node:module";
 import { basename, dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { attach, type Anchor } from "./anchor";
 import { formatSendMessage } from "./message";
-import { liveEntries, removeEntry, writeEntry } from "./registry";
+import { liveEntries, removeEntry, writeEntry, type RegistryEntry } from "./registry";
 import { escapeHtml, normalize, renderDocument } from "./render";
 import { ThreadStore, threadStatus } from "./store";
 
@@ -17,6 +17,67 @@ export interface ArtifactServerOptions {
 	cwd: string;
 	/** Deliver a user message into the session. */
 	send: (text: string) => void;
+	/** Ports to try before a random one. Defaults to PREFERRED_PORTS. */
+	ports?: number[];
+}
+
+/** A stable address lets an open tab reconnect after the session restarts. */
+export const PREFERRED_PORTS = Array.from({ length: 20 }, (_, i) => 47821 + i);
+
+const VIEWER_URL = /^http:\/\/127\.0\.0\.1:\d+\/doc\/[0-9a-f]+\?token=[0-9a-f]+$/;
+
+/** One token per user, saved so restarted servers accept already-open tabs. */
+function savedToken(root: string): string {
+	const file = join(root, "token");
+	const read = () => {
+		try {
+			const token = readFileSync(file, "utf8").trim();
+			return /^[0-9a-f]{64}$/.test(token) ? token : undefined;
+		} catch {
+			return undefined;
+		}
+	};
+	const existing = read();
+	if (existing) return existing;
+	mkdirSync(root, { recursive: true, mode: 0o700 });
+	const token = randomBytes(32).toString("hex");
+	try {
+		writeFileSync(file, token, { mode: 0o600, flag: "wx" });
+	} catch {
+		// Another session created it first (or the file is unreadable: use an unsaved token).
+		return read() ?? token;
+	}
+	return token;
+}
+
+/** Ask another session's server to show url in one of its tabs. */
+function postShow(entry: RegistryEntry, url: string): Promise<boolean> {
+	return new Promise((resolve) => {
+		const req = request(
+			{
+				host: "127.0.0.1",
+				port: entry.port,
+				path: "/api/show",
+				method: "POST",
+				headers: { host: `127.0.0.1:${entry.port}`, "x-artifact-token": entry.token, "content-type": "application/json" },
+				timeout: 500,
+			},
+			(res) => {
+				let body = "";
+				res.on("data", (c) => (body += c));
+				res.on("end", () => {
+					try {
+						resolve(res.statusCode === 200 && JSON.parse(body).shown === true);
+					} catch {
+						resolve(false);
+					}
+				});
+			},
+		);
+		req.on("timeout", () => req.destroy());
+		req.on("error", () => resolve(false));
+		req.end(JSON.stringify({ url }));
+	});
 }
 
 interface OpenDoc {
@@ -56,13 +117,17 @@ class HttpError extends Error {
 }
 
 export class ArtifactServer {
-	readonly token = randomBytes(32).toString("hex");
+	readonly token: string;
 	port = 0;
 	private server?: Server;
 	private starting?: Promise<void>;
 	private readonly docs = new Map<string, OpenDoc>();
+	/** Connected viewer tabs, oldest first. */
+	private tabs: ServerResponse[] = [];
 
-	constructor(private readonly options: ArtifactServerOptions) {}
+	constructor(private readonly options: ArtifactServerOptions) {
+		this.token = savedToken(options.root);
+	}
 
 	get running(): boolean {
 		return this.server !== undefined;
@@ -84,10 +149,20 @@ export class ArtifactServer {
 				else res.end();
 			});
 		});
-		await new Promise<void>((resolve, reject) => {
-			server.once("error", reject);
-			server.listen(0, "127.0.0.1", () => resolve());
-		});
+		for (const port of [...(this.options.ports ?? PREFERRED_PORTS), 0]) {
+			try {
+				await new Promise<void>((resolve, reject) => {
+					server.once("error", reject);
+					server.listen(port, "127.0.0.1", () => {
+						server.off("error", reject);
+						resolve();
+					});
+				});
+				break;
+			} catch (error) {
+				if (port === 0 || (error as NodeJS.ErrnoException).code !== "EADDRINUSE") throw error;
+			}
+		}
 		const address = server.address();
 		this.port = typeof address === "object" && address ? address.port : 0;
 		this.server = server;
@@ -104,6 +179,7 @@ export class ArtifactServer {
 			for (const client of doc.clients) client.end();
 		}
 		this.docs.clear();
+		this.tabs = [];
 		if (!server) return;
 		removeEntry(this.options.root, process.pid, this.port);
 		server.closeAllConnections();
@@ -142,6 +218,24 @@ export class ArtifactServer {
 
 	documents(): Array<{ id: string; path: string; url: string }> {
 		return [...this.docs.values()].map((d) => ({ id: d.id, path: d.path, url: this.url(d.id) }));
+	}
+
+	/**
+	 * Ask the most recently connected viewer tab, this session's or another
+	 * session's, to show url. Returns false when no tab is open anywhere.
+	 */
+	async showInTab(url: string): Promise<boolean> {
+		if (this.showHere(url)) return true;
+		const others = await liveEntries(this.options.root, { self: { pid: process.pid, port: this.port } });
+		for (const entry of others) if (await postShow(entry, url)) return true;
+		return false;
+	}
+
+	private showHere(url: string): boolean {
+		const tab = this.tabs.at(-1);
+		if (!tab) return false;
+		tab.write(`event: show\ndata: ${JSON.stringify({ url })}\n\n`);
+		return true;
 	}
 
 	/** Returns false when the document is not open in this server. */
@@ -236,7 +330,17 @@ export class ArtifactServer {
 			res.writeHead(200, { ...SECURITY_HEADERS, "content-type": "text/event-stream", connection: "keep-alive" });
 			res.write(": connected\n\n");
 			doc.clients.add(res);
-			req.on("close", () => doc.clients.delete(res));
+			this.tabs.push(res);
+			req.on("close", () => {
+				doc.clients.delete(res);
+				this.tabs = this.tabs.filter((t) => t !== res);
+			});
+			return;
+		}
+		if (method === "POST" && url.pathname === "/api/show") {
+			const target = (await readJson(req)).url;
+			if (typeof target !== "string" || !VIEWER_URL.test(target)) throw new HttpError(400, "Not a viewer page");
+			this.json(res, 200, { shown: this.showHere(target) });
 			return;
 		}
 		if (parts[0] === "api" && parts[1] === "doc" && parts[2]) {

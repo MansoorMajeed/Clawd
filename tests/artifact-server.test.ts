@@ -1,4 +1,5 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createServer as createNetServer } from "node:net";
 import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,6 +21,8 @@ function call(port: number, path: string, opts: { method?: string; body?: unknow
 				host: "127.0.0.1",
 				port,
 				path,
+				// Test servers reuse the same preferred port; never reuse a socket from a stopped one.
+				agent: false,
 				method: opts.method ?? "GET",
 				headers: {
 					host: opts.host ?? `127.0.0.1:${port}`,
@@ -38,8 +41,17 @@ function call(port: number, path: string, opts: { method?: string; body?: unknow
 	});
 }
 
-/** Resolves with the first SSE event name received after `trigger` runs. */
-function nextEvent(port: number, path: string, trigger: () => unknown): Promise<string> {
+function freePort(): Promise<number> {
+	return new Promise((resolve) => {
+		const probe = createNetServer().listen(0, "127.0.0.1", () => {
+			const { port } = probe.address() as { port: number };
+			probe.close(() => resolve(port));
+		});
+	});
+}
+
+/** Resolves with the first SSE event name (and its data) received after `trigger` runs. */
+function nextEvent(port: number, path: string, trigger: () => unknown): Promise<{ name: string; data: string }> {
 	return new Promise((resolve, reject) => {
 		const req = request({ host: "127.0.0.1", port, path, headers: { host: `127.0.0.1:${port}` } }, (res) => {
 			let buf = "";
@@ -50,10 +62,10 @@ function nextEvent(port: number, path: string, trigger: () => unknown): Promise<
 					trigger();
 					return;
 				}
-				const match = /event: (\w+)/.exec(buf);
+				const match = /event: (\w+)\ndata: (.*)\n\n/.exec(buf);
 				if (match) {
 					req.destroy();
-					resolve(match[1]);
+					resolve({ name: match[1], data: match[2] });
 				}
 			});
 		});
@@ -136,7 +148,7 @@ describe("ArtifactServer", () => {
 		const decision = (await blocks()).find((b) => b.kind === "decision")!;
 		await call(server.port, `/api/doc/${docId}/comments?${q}`, { method: "POST", body: { blockId: decision.id, quote: "Pick A", text: "q" } });
 		const event = await nextEvent(server.port, `/api/events?doc=${docId}&${q}`, () => server.reply(docPath, 1, "answer"));
-		expect(event).toBe("changed");
+		expect(event.name).toBe("changed");
 		const threads = JSON.parse((await call(server.port, `/api/doc/${docId}?${q}`)).body).threads;
 		expect(threads[0]).toMatchObject({ id: 1, status: "draft", attachment: { status: "exact", blockId: decision.id } });
 		expect(threads[0].messages.at(-1)).toMatchObject({ author: "agent", text: "answer" });
@@ -180,7 +192,50 @@ describe("ArtifactServer", () => {
 		const event = await nextEvent(server.port, `/api/events?doc=${docId}&${q}`, () =>
 			writeFileSync(docPath, "# Plan\n\nEdited.\n"),
 		);
-		expect(event).toBe("changed");
+		expect(event.name).toBe("changed");
+	});
+
+	it("uses the preferred port and falls back when it is taken", async () => {
+		const port = await freePort();
+		const first = new ArtifactServer({ root: join(dir, "ports"), cwd: dir, send, ports: [port] });
+		const second = new ArtifactServer({ root: join(dir, "ports"), cwd: dir, send, ports: [port] });
+		await first.start();
+		await second.start();
+		expect(first.port).toBe(port);
+		expect(second.port).not.toBe(port);
+		expect(second.port).toBeGreaterThan(0);
+		await first.stop();
+		await second.stop();
+	});
+
+	it("keeps one saved token so restarted servers accept open tabs", () => {
+		const again = new ArtifactServer({ root: join(dir, "state"), cwd: dir, send });
+		expect(again.token).toBe(server.token);
+		expect(statSync(join(dir, "state", "token")).mode & 0o777).toBe(0o600);
+	});
+
+	it("asks an open tab to show a document, including a tab from another session", async () => {
+		const target = server.url(docId);
+		expect(await server.showInTab(target)).toBe(false);
+
+		let delivered: boolean | undefined;
+		const own = await nextEvent(server.port, `/api/events?doc=${docId}&${q}`, async () => {
+			delivered = await server.showInTab(target);
+		});
+		expect(own).toEqual({ name: "show", data: JSON.stringify({ url: target }) });
+		expect(delivered).toBe(true);
+
+		const other = new ArtifactServer({ root: join(dir, "state"), cwd: dir, send, ports: [] });
+		await other.start();
+		const otherUrl = other.url(other.open(docPath).id);
+		const remote = await nextEvent(server.port, `/api/events?doc=${docId}&${q}`, () => other.showInTab(otherUrl));
+		expect(remote).toEqual({ name: "show", data: JSON.stringify({ url: otherUrl }) });
+		await other.stop();
+	});
+
+	it("refuses to point a tab at anything but a viewer page", async () => {
+		const res = await call(server.port, `/api/show?${q}`, { method: "POST", body: { url: "https://example.com/" } });
+		expect(res.status).toBe(400);
 	});
 
 	it("shares one listener between concurrent starts", async () => {
@@ -245,5 +300,28 @@ describe("artifact extension", () => {
 
 		await handlers.session_shutdown({}, ctx);
 		await expect(call(port, `/api/doc/${id}?token=${token}`)).rejects.toThrow();
+	});
+
+	it("opens a browser tab only when no viewer tab is open", async () => {
+		const tools: Record<string, any> = {};
+		const handlers: Record<string, any> = {};
+		const pi = { registerTool: (t: any) => (tools[t.name] = t), registerCommand: vi.fn(), on: (n: string, h: any) => (handlers[n] = h), sendUserMessage: vi.fn() };
+		const openBrowser = vi.fn();
+		createArtifactExtension({ root: join(dir, "tab-state"), openBrowser })(pi as any);
+		const ctx = { cwd: dir, isIdle: () => true };
+		writeFileSync(join(dir, "other.md"), "# Other\n");
+
+		await tools.artifact_open.execute("1", { path: "plan.md" }, undefined, undefined, ctx);
+		expect(openBrowser).toHaveBeenCalledTimes(1);
+		const url = new URL(openBrowser.mock.calls[0][0]);
+		const events = `/api/events?doc=${url.pathname.split("/").pop()}&token=${url.searchParams.get("token")}`;
+		let result: any;
+		const shown = await nextEvent(Number(url.port), events, async () => {
+			result = await tools.artifact_open.execute("2", { path: "other.md" }, undefined, undefined, ctx);
+		});
+		expect(shown.name).toBe("show");
+		expect(openBrowser).toHaveBeenCalledTimes(1);
+		expect(result.content[0].text).toContain("open viewer tab");
+		await handlers.session_shutdown({}, ctx);
 	});
 });

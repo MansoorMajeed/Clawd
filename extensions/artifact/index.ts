@@ -37,16 +37,21 @@ export function createArtifactExtension(deps: Deps) {
 			else pi.sendUserMessage(message, { deliverAs: "followUp" });
 		}
 
-		async function open(ctx: SessionContext, path: string): Promise<string> {
+		/** Show the document in an open viewer tab if there is one, else open a browser tab. */
+		async function open(ctx: SessionContext, path: string): Promise<{ url: string; reused: boolean }> {
 			session = ctx;
 			const abs = resolve(ctx.cwd, path);
 			if (!existsSync(abs) || !statSync(abs).isFile()) throw new Error(`Not a file: ${abs}`);
 			if (!server) server = new ArtifactServer({ root: deps.root, cwd: ctx.cwd, send });
 			await server.start();
 			const { url } = server.open(abs);
-			deps.openBrowser(url);
-			return url;
+			const reused = await server.showInTab(url);
+			if (!reused) deps.openBrowser(url);
+			return { url, reused };
 		}
+
+		const opened = (path: string, { url, reused }: { url: string; reused: boolean }) =>
+			reused ? `Showing ${path} in the open viewer tab: ${url}` : `Opened ${path} in a new browser tab: ${url}`;
 
 		async function close(): Promise<void> {
 			const current = server;
@@ -63,8 +68,7 @@ export function createArtifactExtension(deps: Deps) {
 				path: Type.String({ description: "Markdown file path, relative to the working directory or absolute" }),
 			}),
 			async execute(_id, params, _signal, _onUpdate, ctx) {
-				const url = await open(ctx, params.path);
-				return text(`Opened ${params.path} in the browser: ${url}`);
+				return text(opened(params.path, await open(ctx, params.path)));
 			},
 		});
 
@@ -108,8 +112,7 @@ export function createArtifactExtension(deps: Deps) {
 					return;
 				}
 				try {
-					const url = await open(ctx, arg);
-					ctx.ui.notify(`Opened ${arg}: ${url}`, "info");
+					ctx.ui.notify(opened(arg, await open(ctx, arg)), "info");
 				} catch (error) {
 					ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
 				}

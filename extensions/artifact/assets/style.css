@@ -369,6 +369,7 @@ img { max-width: 100%; }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .btn-primary:hover { border-color: var(--ink); }
 .btn-quiet { background: transparent; border-color: transparent; color: var(--muted); }
+a.btn { text-decoration: none; color: var(--accent); }
 .btn-quiet:hover { color: var(--ink); border-color: var(--rule); }
 .btn[disabled] { opacity: 0.45; cursor: default; }
 

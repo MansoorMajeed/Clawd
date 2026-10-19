@@ -17,6 +17,8 @@
 		nextNew: 0,
 		expanded: new Set(),
 		focus: undefined,
+		/** A document the agent asked to show while a comment was being typed. */
+		showLater: undefined,
 	};
 
 	// ---------- helpers ----------
@@ -179,9 +181,20 @@
 			}
 		});
 		events.addEventListener("changed", () => load());
+		events.addEventListener("show", (e) => {
+			const { url } = JSON.parse(e.data);
+			if (!/^http:\/\/127\.0\.0\.1:\d+\/doc\//.test(url)) return;
+			if ([...state.composers.values()].some((text) => text.trim())) {
+				state.showLater = url;
+				render();
+			} else location.href = url;
+		});
 		events.addEventListener("error", () => {
 			state.connected = false;
 			renderStatus();
+			// The browser retries dropped connections itself, but gives up on an error response
+			// (e.g. a restarted session that hasn't reopened this document yet).
+			if (events.readyState === EventSource.CLOSED) setTimeout(connect, 3000);
 		});
 	}
 
@@ -527,6 +540,7 @@
 						h("span", { class: "status-dot" }),
 						h("span", { class: "path" }, doc?.path ?? ""),
 						h("span", { class: "spacer" }),
+						state.showLater && h("a", { class: "btn btn-quiet", href: state.showLater }, "New document opened · view"),
 						h("button", { class: "btn btn-quiet", onclick: toggleTheme }, currentTheme() === "dark" ? "Light mode" : "Dark mode"),
 						h("button", { class: "btn btn-primary", disabled: drafts === 0, onclick: sendAll }, `Send all (${drafts})`),
 					),
