@@ -72,7 +72,7 @@ The 18 active entrypoints provide the workflow prompt; permission and read-befor
 
 Documents support GitHub-style callouts (`> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`), `> [!DECISION]` cards, tables, and Mermaid diagrams (bundled, works offline). Thread state and the server registry live in `~/.pi/agent/artifacts/`; the sidebar lists documents from every running session.
 
-Security: each session's server listens on `127.0.0.1` only and requires a random token in the URL. Anyone holding that URL can send prompts into the session, so don't share it. Other sessions' URLs (with their tokens) are in the owner-only registry and the sidebar. Raw HTML in documents and all thread text are shown as text, never executed, and a Content-Security-Policy allows only the bundled scripts.
+Security: each session's server listens on `127.0.0.1` only and requires a random token in the URL, so other machines and other websites in your browser cannot send prompts into the session. Raw HTML in documents and all thread text are shown as text, never executed, and a Content-Security-Policy allows only the bundled scripts.
 
 `/clear` only reminds users to use Pi's native `/new` command; it does not alias `/new` or change the current session. The old session-reset behavior and `multi-edit` override remain removed. Use Pi's native `edit` tool instead; it accepts multiple disjoint replacements in one file but does not provide cross-file batches or Codex-style patch application.
 
