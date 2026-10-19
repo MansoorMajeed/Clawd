@@ -4,10 +4,10 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { createRequire } from "node:module";
 import { basename, dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { attach, occurrenceOf } from "./anchor";
+import { attach, type Anchor } from "./anchor";
 import { formatSendMessage } from "./message";
 import { liveEntries, removeEntry, writeEntry } from "./registry";
-import { escapeHtml, renderDocument } from "./render";
+import { escapeHtml, normalize, renderDocument } from "./render";
 import { ThreadStore, threadStatus } from "./store";
 
 export interface ArtifactServerOptions {
@@ -47,6 +47,7 @@ const SECURITY_HEADERS = {
 };
 
 const MAX_BODY = 64 * 1024;
+const MAX_QUOTE = 1000;
 
 class HttpError extends Error {
 	constructor(readonly status: number, message: string) {
@@ -268,7 +269,18 @@ export class ArtifactServer {
 			const { blocks } = renderDocument(readFileSync(doc.path, "utf8"));
 			const block = blocks.find((b) => b.id === blockId);
 			if (!block) throw new HttpError(409, "That section changed; reload and try again");
-			const anchor = { heading: block.heading, text: block.text, occurrence: occurrenceOf(blocks, block) };
+			const quote = typeof body.quote === "string" ? normalize(body.quote).slice(0, MAX_QUOTE) : "";
+			if (!quote) throw new HttpError(400, "Nothing selected");
+			const anchor: Anchor = { section: block.heading, path: block.path, blockId: block.id, quote };
+			if (body.label === true && block.kind === "mermaid") {
+				anchor.diagramSource = (block.source ?? "")
+					.split("\n").filter((l) => normalize(l).includes(quote))
+					.slice(0, 3)
+					.map((l) => l.trim())
+					.join(" / ");
+			} else if (typeof body.context === "string" && normalize(body.context)) {
+				anchor.context = normalize(body.context).slice(0, MAX_QUOTE);
+			}
 			return { threadId: doc.store.addComment({ anchor, text }).id };
 		}
 		if (action[0] === "send" && action.length === 1) {
@@ -308,7 +320,10 @@ export class ArtifactServer {
 				id: t.id,
 				status: threadStatus(t),
 				attachment: attach(t.anchor, rendered.blocks),
-				quote: t.anchor.text,
+				quote: t.anchor.quote,
+				context: t.anchor.context,
+				path: t.anchor.path,
+				diagram: t.anchor.diagramSource !== undefined,
 				messages: t.messages,
 			})),
 		};

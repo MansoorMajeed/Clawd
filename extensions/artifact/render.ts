@@ -8,8 +8,14 @@ export interface Block {
 	id: string;
 	/** Slug of the nearest heading at or above this block ("" before the first heading). */
 	heading: string;
-	/** Whitespace-normalized source text, used to re-attach threads after edits. */
+	/** Whitespace-normalized source text. */
 	text: string;
+	/** Whitespace-normalized rendered text (what the reader sees), used to find quoted selections. */
+	plain: string;
+	/** Heading path below the document title, e.g. "Tasks › Phase 1" ("" before the first heading). */
+	path: string;
+	/** Raw diagram source, for Mermaid blocks only. */
+	source?: string;
 	kind: BlockKind;
 	html: string;
 }
@@ -72,8 +78,19 @@ function slugify(text: string): string {
 		.replace(/\s+/g, "-") || "section";
 }
 
-function normalize(text: string): string {
+export function normalize(text: string): string {
 	return text.replace(/\s+/g, " ").trim();
+}
+
+function plainText(html: string): string {
+	const text = html
+		.replace(/<[^>]*>/g, " ")
+		.replace(/&lt;/g, "<")
+		.replace(/&gt;/g, ">")
+		.replace(/&quot;/g, '"')
+		.replace(/&#39;/g, "'")
+		.replace(/&amp;/g, "&");
+	return normalize(text);
 }
 
 function renderBlockquote(token: Tokens.Blockquote): { kind: BlockKind; html: string } {
@@ -116,6 +133,7 @@ export function renderDocument(markdown: string): RenderedDocument {
 	const slugCounts = new Map<string, number>();
 	const idCounts = new Map<string, number>();
 	let heading = "";
+	const trail: Array<{ depth: number; text: string }> = [];
 	let firstH1: string | undefined;
 	let firstHeading: string | undefined;
 
@@ -127,6 +145,8 @@ export function renderDocument(markdown: string): RenderedDocument {
 			const seen = slugCounts.get(base) ?? 0;
 			slugCounts.set(base, seen + 1);
 			heading = seen === 0 ? base : `${base}-${seen}`;
+			while (trail.length > 0 && trail[trail.length - 1].depth >= headingToken.depth) trail.pop();
+			trail.push({ depth: headingToken.depth, text: plainText(marked.parseInline(headingToken.text, { async: false })) });
 			firstHeading ??= headingToken.text;
 			if (headingToken.depth === 1) firstH1 ??= headingToken.text;
 		}
@@ -135,7 +155,13 @@ export function renderDocument(markdown: string): RenderedDocument {
 		const seen = idCounts.get(base) ?? 0;
 		idCounts.set(base, seen + 1);
 		const { kind, html } = renderToken(token);
-		blocks.push({ id: seen === 0 ? base : `${base}-${seen + 1}`, heading, text, kind, html });
+		const plain = kind === "mermaid" ? normalize((token as Tokens.Code).text) : plainText(html);
+		// The document title adds nothing once there is a subsection to name.
+		const named = trail.length > 1 && trail[0].depth === 1 ? trail.slice(1) : trail;
+		const path = named.map((t) => t.text).join(" › ");
+		const block: Block = { id: seen === 0 ? base : `${base}-${seen + 1}`, heading, text, plain, path, kind, html };
+		if (kind === "mermaid") block.source = (token as Tokens.Code).text;
+		blocks.push(block);
 	}
 
 	return {

@@ -6,7 +6,7 @@ import { formatSendMessage } from "../extensions/artifact/message";
 import { ThreadStore, threadStatus } from "../extensions/artifact/store";
 
 const DOC = "/work/repo/.scratch/plans/todo/plan.md";
-const anchor = { heading: "decisions", text: "> [!DECISION] > 1. Pick option A." };
+const anchor = { section: "decisions", path: "Plan › Decisions", blockId: "decisions--1", quote: "Pick option A", context: "1. Pick option A." };
 
 let root: string;
 beforeEach(() => {
@@ -98,22 +98,35 @@ describe("ThreadStore", () => {
 });
 
 describe("formatSendMessage", () => {
-	it("tags each thread with the viewer header, quote, and comments", () => {
+	it("tells the agent the section, selection, context, and comment", () => {
 		const store = new ThreadStore(root, DOC);
 		store.addComment({ anchor, text: "Why A?\nNot B?" });
-		store.addComment({ anchor: { heading: "tasks", text: "x".repeat(400) }, text: "Too long" });
+		store.addComment({ anchor: { section: "", path: "", blockId: "top--1", quote: "x".repeat(400) }, text: "Too long" });
+		store.addComment({
+			anchor: { section: "flow", path: "Plan › Flow", blockId: "flow--1", quote: "user message", diagramSource: "Browser->>Session: user message" },
+			text: "Tool call instead?",
+		});
 		const message = formatSendMessage(".scratch/plans/todo/plan.md", store.takeDrafts());
 		expect(message).toBe(
 			[
 				"[artifact viewer · .scratch/plans/todo/plan.md · thread #1]",
-				"> > [!DECISION] > 1. Pick option A.",
+				"Section: Plan › Decisions",
+				'Selected: "Pick option A"',
+				'Context: "…1. Pick option A.…"',
 				"",
 				"Why A?\nNot B?",
 				"",
 				"[artifact viewer · .scratch/plans/todo/plan.md · thread #2]",
-				`> ${"x".repeat(300)}…`,
+				`Selected: "${"x".repeat(300)}…"`,
 				"",
 				"Too long",
+				"",
+				"[artifact viewer · .scratch/plans/todo/plan.md · thread #3]",
+				"Section: Plan › Flow",
+				'Diagram label: "user message"',
+				"Mermaid source: Browser->>Session: user message",
+				"",
+				"Tool call instead?",
 				"",
 				'Reply to each thread with artifact_reply (file: ".scratch/plans/todo/plan.md"). Edit the file if the document should change.',
 			].join("\n"),

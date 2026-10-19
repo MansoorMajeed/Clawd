@@ -107,7 +107,7 @@ describe("ArtifactServer", () => {
 	it("sends all drafts as one combined message, then one at a time", async () => {
 		const decision = (await blocks()).find((b) => b.kind === "decision")!;
 		for (const text of ["first", "second", "third"]) {
-			await call(server.port, `/api/doc/${docId}/comments?${q}`, { method: "POST", body: { blockId: decision.id, text } });
+			await call(server.port, `/api/doc/${docId}/comments?${q}`, { method: "POST", body: { blockId: decision.id, quote: "Pick A", text } });
 		}
 		await call(server.port, `/api/doc/${docId}/send?${q}`, { method: "POST", body: { threadId: 2 } });
 		expect(send).toHaveBeenCalledTimes(1);
@@ -125,12 +125,27 @@ describe("ArtifactServer", () => {
 
 	it("pushes a change event when the agent replies", async () => {
 		const decision = (await blocks()).find((b) => b.kind === "decision")!;
-		await call(server.port, `/api/doc/${docId}/comments?${q}`, { method: "POST", body: { blockId: decision.id, text: "q" } });
+		await call(server.port, `/api/doc/${docId}/comments?${q}`, { method: "POST", body: { blockId: decision.id, quote: "Pick A", text: "q" } });
 		const event = await nextEvent(server.port, `/api/events?doc=${docId}&${q}`, () => server.reply(docPath, 1, "answer"));
 		expect(event).toBe("changed");
 		const threads = JSON.parse((await call(server.port, `/api/doc/${docId}?${q}`)).body).threads;
 		expect(threads[0]).toMatchObject({ id: 1, status: "draft", attachment: { status: "exact", blockId: decision.id } });
 		expect(threads[0].messages.at(-1)).toMatchObject({ author: "agent", text: "answer" });
+	});
+
+	it("records the section and selection, and looks up Mermaid source for diagram labels", async () => {
+		writeFileSync(docPath, "# Plan\n\n## Flow\n\n```mermaid\nsequenceDiagram\n  Browser->>Session: user message\n  Session-->>Browser: reply\n```\n\nSome *styled* text here.\n");
+		const all = await blocks();
+		const diagram = all.find((b) => b.kind === "mermaid")!;
+		const para = all.at(-1)!;
+		const post = (body: unknown) => call(server.port, `/api/doc/${docId}/comments?${q}`, { method: "POST", body });
+		await post({ blockId: para.id, quote: "styled text", context: "Some styled text here.", text: "a" });
+		await post({ blockId: diagram.id, quote: "user message", label: true, text: "b" });
+		expect((await post({ blockId: para.id, quote: "  ", text: "c" })).status).toBe(400);
+		await call(server.port, `/api/doc/${docId}/send?${q}`, { method: "POST", body: {} });
+		const message = send.mock.calls[0][0];
+		expect(message).toContain('Section: Flow\nSelected: "styled text"\nContext: "…Some styled text here.…"');
+		expect(message).toContain('Diagram label: "user message"\nMermaid source: Browser->>Session: user message');
 	});
 
 	it("pushes a change event when the file is edited", async () => {
@@ -185,12 +200,12 @@ describe("artifact extension", () => {
 		const doc = JSON.parse((await call(port, `/api/doc/${id}?token=${token}`)).body);
 		const blockId = doc.blocks[1].id;
 
-		await call(port, `/api/doc/${id}/comments?token=${token}`, { method: "POST", body: { blockId, text: "busy" } });
+		await call(port, `/api/doc/${id}/comments?token=${token}`, { method: "POST", body: { blockId, quote: "Decisions", text: "busy" } });
 		await call(port, `/api/doc/${id}/send?token=${token}`, { method: "POST", body: {} });
 		expect(pi.sendUserMessage).toHaveBeenLastCalledWith(expect.stringContaining("busy"), { deliverAs: "followUp" });
 
 		idle = true;
-		await call(port, `/api/doc/${id}/comments?token=${token}`, { method: "POST", body: { blockId, text: "idle" } });
+		await call(port, `/api/doc/${id}/comments?token=${token}`, { method: "POST", body: { blockId, quote: "Decisions", text: "idle" } });
 		await call(port, `/api/doc/${id}/send?token=${token}`, { method: "POST", body: {} });
 		expect(pi.sendUserMessage).toHaveBeenLastCalledWith(expect.stringContaining("idle"));
 

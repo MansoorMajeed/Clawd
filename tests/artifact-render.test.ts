@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { attach, occurrenceOf } from "../extensions/artifact/anchor";
+import { attach } from "../extensions/artifact/anchor";
 import { renderDocument } from "../extensions/artifact/render";
 
 const DOC = `# Plan title
@@ -48,6 +48,16 @@ describe("renderDocument", () => {
 		expect(idOf(after, "Ship on Friday")).toBe(idOf(before, "Ship on Friday"));
 		expect(idOf(after, "Phase 1")).toBe(idOf(before, "Phase 1"));
 		expect(new Set(after.blocks.map((b) => b.id)).size).toBe(after.blocks.length);
+	});
+
+	it("gives each block its rendered plain text and heading path", () => {
+		const doc = renderDocument("# Plan\n\n## Tasks\n\n### Phase 1\n\n- **Bold** item with `code` & more\n\n## Other\n\nText.");
+		const item = doc.blocks.find((b) => b.kind === "list")!;
+		expect(item.plain).toBe("Bold item with code & more");
+		expect(item.path).toBe("Tasks › Phase 1");
+		expect(doc.blocks.at(-1)!.path).toBe("Other");
+		expect(doc.blocks[0].path).toBe("Plan");
+		expect(renderDocument("```mermaid\nA-->B: hi\n```").blocks[0].plain).toBe("A-->B: hi");
 	});
 
 	it("gives duplicate headings and blocks distinct IDs", () => {
@@ -110,30 +120,55 @@ describe("renderDocument", () => {
 describe("attach", () => {
 	const doc = renderDocument(DOC);
 	const decision = blockByText(doc, "Ship on Friday");
-	const anchor = { heading: decision.heading, text: decision.text };
+	const anchor = {
+		section: "decisions",
+		path: "Plan title › Decisions",
+		blockId: decision.id,
+		quote: "Ship on Friday",
+		context: "Ship on Friday.",
+	};
+	const headingOf = (d: typeof doc, slug: string) => d.blocks.find((b) => b.kind === "heading" && b.heading === slug)!;
 
-	it("finds the same text under the same heading", () => {
-		const edited = renderDocument(DOC.replace("Intro paragraph.", "New intro."));
-		expect(attach(anchor, edited.blocks)).toEqual({ status: "exact", blockId: blockByText(edited, "Ship on Friday").id });
+	it("stays on the original block while it still contains the quote", () => {
+		expect(attach(anchor, doc.blocks)).toEqual({ status: "exact", blockId: decision.id });
 	});
 
-	it("falls back to the heading when the block text changed", () => {
+	it("follows the surrounding text when the block moves to another section", () => {
+		const moved = renderDocument(DOC.replace("> [!DECISION]\n> 2. Ship on Friday.\n", "").replace("- [ ] Phase 2", "- [ ] Phase 2\n\n2. Ship on Friday."));
+		expect(attach(anchor, moved.blocks)).toEqual({ status: "exact", blockId: blockByText(moved, "Ship on Friday").id });
+	});
+
+	it("finds the quote under the same heading after the block was rewritten around it", () => {
+		const edited = renderDocument(DOC.replace("2. Ship on Friday.", "2. We should Ship on Friday, after review."));
+		expect(attach(anchor, edited.blocks)).toEqual({ status: "exact", blockId: blockByText(edited, "after review").id });
+	});
+
+	it("does not match a short quote in another section", () => {
+		const short = { ...anchor, quote: "Phase", context: "Phase gone" };
+		const heading = headingOf(doc, "decisions");
+		expect(attach(short, doc.blocks)).toEqual({ status: "section", blockId: heading.id });
+	});
+
+	it("falls back to the section heading when the quote is gone", () => {
 		const edited = renderDocument(DOC.replace("Ship on Friday", "Ship on Monday"));
-		const heading = edited.blocks.find((b) => b.kind === "heading" && b.heading === "decisions")!;
-		expect(attach(anchor, edited.blocks)).toEqual({ status: "heading", blockId: heading.id });
+		expect(attach(anchor, edited.blocks)).toEqual({ status: "section", blockId: headingOf(edited, "decisions").id });
+	});
+
+	it("is outdated when the section is gone too", () => {
+		const edited = renderDocument(DOC.replace("## Decisions", "## Choices").replace("Ship on Friday", "Ship later"));
+		expect(attach(anchor, edited.blocks)).toEqual({ status: "outdated" });
 	});
 
 	it("keeps a comment on the second of two identical blocks on that copy", () => {
 		const dup = renderDocument("## Notes\n\nSame.\n\nSame.\n");
 		const second = dup.blocks[2];
-		const dupAnchor = { heading: second.heading, text: second.text, occurrence: occurrenceOf(dup.blocks, second) };
-		expect(attach(dupAnchor, dup.blocks)).toEqual({ status: "exact", blockId: second.id });
-		const edited = renderDocument("## Notes\n\nIntro.\n\nSame.\n\nSame.\n");
-		expect(attach(dupAnchor, edited.blocks)).toEqual({ status: "exact", blockId: edited.blocks[3].id });
+		expect(attach({ section: "notes", path: "Notes", blockId: second.id, quote: "Same." }, dup.blocks)).toEqual({
+			status: "exact",
+			blockId: second.id,
+		});
 	});
 
-	it("marks the thread outdated when the heading is gone too", () => {
-		const edited = renderDocument(DOC.replace("## Decisions", "## Choices").replace("Ship on Friday", "Ship later"));
-		expect(attach(anchor, edited.blocks)).toEqual({ status: "outdated" });
+	it("treats anchors from the old block format as outdated", () => {
+		expect(attach({ heading: "decisions", text: "x" } as any, doc.blocks)).toEqual({ status: "outdated" });
 	});
 });

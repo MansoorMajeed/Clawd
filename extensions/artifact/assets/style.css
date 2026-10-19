@@ -140,24 +140,43 @@ button, textarea { font: inherit; color: inherit; }
 .block + .block { margin-top: 1.1em; }
 .block-heading + .block { margin-top: 0.5em; }
 
-.add-comment {
+.doc { position: relative; }
+
+[hidden] { display: none !important; }
+
+.line-add {
 	position: absolute;
-	left: -40px;
-	top: 2px;
+	left: 34px;
+	z-index: 2;
 	width: 26px;
 	height: 26px;
+	margin-top: 2px;
 	border: 1px solid var(--rule);
 	border-radius: 50%;
 	background: var(--paper-raised);
 	color: var(--muted);
 	font: 600 16px/1 var(--sans);
 	cursor: pointer;
-	opacity: 0;
-	transition: opacity 120ms ease, color 120ms ease, border-color 120ms ease;
+	transition: color 120ms ease, border-color 120ms ease;
 }
 
-.block:hover > .add-comment, .add-comment:focus-visible { opacity: 1; }
-.add-comment:hover { color: var(--accent); border-color: var(--accent); }
+.line-add:hover { color: var(--accent); border-color: var(--accent); }
+
+.sel-add {
+	position: absolute;
+	z-index: 3;
+	box-shadow: var(--shadow);
+}
+
+mark.hl {
+	background: color-mix(in srgb, var(--accent) 20%, transparent);
+	color: inherit;
+	border-bottom: 2px solid var(--accent);
+	border-radius: 2px;
+}
+
+pre.mermaid svg text, pre.mermaid svg .nodeLabel, pre.mermaid svg .edgeLabel { cursor: pointer; }
+pre.mermaid svg text:hover, pre.mermaid svg .nodeLabel:hover, pre.mermaid svg .edgeLabel:hover { fill: var(--accent); color: var(--accent); }
 
 .block.has-threads > .block-body { box-shadow: -14px 0 0 -11px var(--accent); }
 
@@ -362,7 +381,7 @@ img { max-width: 100%; }
 }
 
 .btn:hover { border-color: var(--muted); }
-.btn:focus-visible, .add-comment:focus-visible, .sidebar a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn:focus-visible, .line-add:focus-visible, .sidebar a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .btn-primary:hover { border-color: var(--ink); }
 .btn-quiet { background: transparent; border-color: transparent; color: var(--muted); }
@@ -400,9 +419,9 @@ img { max-width: 100%; }
 @media (max-width: 900px) {
 	.layout { grid-template-columns: 1fr; }
 	.sidebar { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--rule); }
-	.doc, .outdated { padding-left: 24px; padding-right: 24px; }
+	.doc, .outdated { padding-left: 40px; padding-right: 24px; }
 	.topbar { padding: 10px 24px; }
-	.add-comment { position: static; opacity: 1; float: right; margin: 0 0 4px 8px; }
+	.line-add { left: 8px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
