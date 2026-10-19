@@ -213,14 +213,12 @@ export class ArtifactServer {
 		if (action[0] === "comments" && action.length === 1) {
 			if (!text) throw new HttpError(400, "Empty comment");
 			if (threadId !== undefined) {
-				doc.store.addComment({ threadId, text });
-				return { ok: true };
+				return { threadId: doc.store.addComment({ threadId, text }).id };
 			}
 			const blockId = typeof body.blockId === "string" ? body.blockId : "";
 			const block = renderDocument(readFileSync(doc.path, "utf8")).blocks.find((b) => b.id === blockId);
 			if (!block) throw new HttpError(409, "That section changed; reload and try again");
-			doc.store.addComment({ anchor: { heading: block.heading, text: block.text }, text });
-			return { ok: true };
+			return { threadId: doc.store.addComment({ anchor: { heading: block.heading, text: block.text }, text }).id };
 		}
 		if (action[0] === "send" && action.length === 1) {
 			const drafts = doc.store.takeDrafts(threadId);
@@ -273,6 +271,7 @@ export class ArtifactServer {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(basename(doc.path))}</title>
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="/assets/style.css?${q}">
 </head>
 <body data-doc="${doc.id}">
