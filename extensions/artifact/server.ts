@@ -6,6 +6,7 @@ import { basename, dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { attach } from "./anchor";
 import { formatSendMessage } from "./message";
+import { liveEntries, removeEntry, writeEntry } from "./registry";
 import { escapeHtml, renderDocument } from "./render";
 import { ThreadStore, threadStatus } from "./store";
 
@@ -81,6 +82,7 @@ export class ArtifactServer {
 		const address = server.address();
 		this.port = typeof address === "object" && address ? address.port : 0;
 		this.server = server;
+		this.register();
 	}
 
 	async stop(): Promise<void> {
@@ -93,6 +95,7 @@ export class ArtifactServer {
 		}
 		this.docs.clear();
 		if (!server) return;
+		removeEntry(this.options.root, process.pid, this.port);
 		server.closeAllConnections();
 		await new Promise<void>((resolve) => server.close(() => resolve()));
 	}
@@ -114,6 +117,7 @@ export class ArtifactServer {
 				// The page still works; it just won't refresh on its own.
 			}
 			this.docs.set(id, doc);
+			this.register();
 		}
 		return { id, url: this.url(id) };
 	}
@@ -135,9 +139,37 @@ export class ArtifactServer {
 		return true;
 	}
 
-	private displayPath(path: string): string {
-		const rel = relative(this.options.cwd, path);
+	private displayPath(path: string, cwd = this.options.cwd): string {
+		const rel = relative(cwd, path);
 		return rel.startsWith("..") ? path : rel;
+	}
+
+	private register(): void {
+		if (!this.server) return;
+		writeEntry(this.options.root, {
+			pid: process.pid,
+			port: this.port,
+			token: this.token,
+			cwd: this.options.cwd,
+			docs: [...this.docs.values()].map((d) => ({ id: d.id, path: d.path })),
+		});
+	}
+
+	/** This server's documents plus those of other live sessions (with a session label). */
+	private async allDocuments() {
+		const own = this.documents().map((d) => ({ id: d.id, path: this.displayPath(d.path), url: d.url }));
+		const others = await liveEntries(this.options.root, { self: { pid: process.pid, port: this.port } });
+		return [
+			...own,
+			...others.flatMap((e) =>
+				e.docs.map((d) => ({
+					id: d.id,
+					path: this.displayPath(d.path, e.cwd),
+					url: `http://127.0.0.1:${e.port}/doc/${d.id}?token=${e.token}`,
+					session: `${basename(e.cwd)} (pid ${e.pid})`,
+				})),
+			),
+		];
 	}
 
 	private notify(doc: OpenDoc): void {
@@ -177,8 +209,12 @@ export class ArtifactServer {
 			res.end(this.shell(doc));
 			return;
 		}
+		if (method === "GET" && url.pathname === "/api/ping") {
+			this.json(res, 200, { ok: true });
+			return;
+		}
 		if (method === "GET" && url.pathname === "/api/docs") {
-			this.json(res, 200, { docs: this.documents().map((d) => ({ ...d, path: this.displayPath(d.path) })) });
+			this.json(res, 200, { docs: await this.allDocuments() });
 			return;
 		}
 		if (method === "GET" && url.pathname === "/api/events") {
