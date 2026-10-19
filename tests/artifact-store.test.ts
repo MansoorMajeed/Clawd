@@ -67,6 +67,30 @@ describe("ThreadStore", () => {
 		expect(readdirSync(join(root, "threads")).filter((f) => !f.endsWith(".json"))).toEqual([]);
 	});
 
+	it("does not lose updates when two stores share a document", () => {
+		const a = new ThreadStore(root, DOC);
+		const b = new ThreadStore(root, DOC);
+		expect(a.addComment({ anchor, text: "from A" }).id).toBe(1);
+		expect(b.addComment({ anchor, text: "from B" }).id).toBe(2);
+		a.addReply(2, "A answers B");
+		expect(b.takeDrafts().map((d) => d.thread.id)).toEqual([1, 2]);
+		const fresh = new ThreadStore(root, DOC);
+		expect(fresh.threads().map((t) => [t.id, t.messages.map((m) => [m.text, m.sent])])).toEqual([
+			[1, [["from A", true]]],
+			[2, [["from B", true], ["A answers B", true]]],
+		]);
+	});
+
+	it("does not send drafts from resolved threads until reopened", () => {
+		const store = new ThreadStore(root, DOC);
+		store.addComment({ anchor, text: "parked" });
+		store.setResolved(1, true);
+		store.addComment({ anchor, text: "active" });
+		expect(store.takeDrafts().map((d) => d.texts)).toEqual([["active"]]);
+		store.setResolved(1, false);
+		expect(store.takeDrafts().map((d) => d.texts)).toEqual([["parked"]]);
+	});
+
 	it("rejects replies to unknown threads", () => {
 		const store = new ThreadStore(root, DOC);
 		expect(() => store.addReply(9, "x")).toThrow(/thread #9/);
