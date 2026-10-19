@@ -7,7 +7,7 @@ Custom Pi coding agent package — lean system prompt, opinionated workflow. Inc
 ## Structure
 
 - `system-prompt.md` — Clawd workflow prompt, prepended to Pi's assembled system prompt
-- `extensions/` — 17 active Pi extension entrypoints (TypeScript)
+- `extensions/` — 18 active Pi extension entrypoints (TypeScript)
   - `system-prompt.ts` — Loads the tracked workflow prompt without modifying global Pi configuration
   - `permission-guard/` — Default-deny guard for the main session. Scopes file operations to project/read-only/read-write paths, prompts for outside access, and hard-blocks resolved `.git` deletion. Supports `/add-dir`, `/add-dir-read`, `--yolo`, and `.pi/permissions.json` allowlists. It is a safety net, not a security boundary.
   - `read-before-edit.ts` — Requires a successful read or write before native edit; resets after compaction
@@ -24,6 +24,7 @@ Custom Pi coding agent package — lean system prompt, opinionated workflow. Inc
   - `git-status.ts` — Git branch, worktree state, and time-since-commit status
   - `btw.ts` — Side-channel chat popover for focused Q&A. Its side session uses unguarded shell/file tools and does not pass through the main permission guard.
   - `notify.ts` — Native desktop notifications (OSC 777) when the agent settles
+  - `artifact/` — Browser viewer for Markdown plans and explanations. `artifact_open` / `/artifact` start a per-session `127.0.0.1` server (preferred ports 47821-47840, saved per-user token, strict CSP, raw HTML escaped) that renders the file with callouts, `[!DECISION]` cards, and offline Mermaid. Comments on any selection, line (`+`), or diagram label freeze the quote, surrounding text, and section; they are sent one at a time or all at once into the same session as tagged user messages; the agent answers with `artifact_reply` (`moved_to` re-points a thread after rewriting its text). Opening a document reuses an open viewer tab from any session when there is one. Thread state, the token, and the cross-session server registry live in `~/.pi/agent/artifacts/`.
   - `split-fork.ts` — Fork session into a new pane (zellij, tmux, Herdr, or Ghostty). Auto-detects multiplexer
 - `skills/` — 19 Pi skills (Markdown, one SKILL.md per directory), invoked as `/skill:<name>`
   - **Workflow** (10): research, plan, plan-init, implement-plan, debug, review, ship, save-session, update-docs, address-review. `plan` includes feature/branch setup; `update-docs` includes full-audit mode.
