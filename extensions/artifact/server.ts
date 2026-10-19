@@ -145,10 +145,10 @@ export class ArtifactServer {
 	}
 
 	/** Returns false when the document is not open in this server. */
-	reply(path: string, threadId: number, text: string): boolean {
+	reply(path: string, threadId: number, text: string, movedTo?: string): boolean {
 		const doc = [...this.docs.values()].find((d) => d.path === path);
 		if (!doc) return false;
-		doc.store.addReply(threadId, text);
+		doc.store.addReply(threadId, text, movedTo);
 		this.notify(doc);
 		return true;
 	}
@@ -266,11 +266,12 @@ export class ArtifactServer {
 				return { threadId: doc.store.addComment({ threadId, text }).id };
 			}
 			const blockId = typeof body.blockId === "string" ? body.blockId : "";
-			const { blocks } = renderDocument(readFileSync(doc.path, "utf8"));
-			const block = blocks.find((b) => b.id === blockId);
-			if (!block) throw new HttpError(409, "That section changed; reload and try again");
 			const quote = typeof body.quote === "string" ? normalize(body.quote).slice(0, MAX_QUOTE) : "";
 			if (!quote) throw new HttpError(400, "Nothing selected");
+			const { blocks } = renderDocument(readFileSync(doc.path, "utf8"));
+			// The block's ID changes when its text is edited while the comment is being written.
+			const block = blocks.find((b) => b.id === blockId) ?? blocks.find((b) => b.plain.includes(quote));
+			if (!block) throw new HttpError(409, "The text you commented on changed. Copy your comment and try again.");
 			const anchor: Anchor = { section: block.heading, path: block.path, blockId: block.id, quote };
 			if (body.label === true && block.kind === "mermaid") {
 				anchor.diagramSource = (block.source ?? "")
@@ -284,8 +285,7 @@ export class ArtifactServer {
 			return { threadId: doc.store.addComment({ anchor, text }).id };
 		}
 		if (action[0] === "send" && action.length === 1) {
-			const drafts = doc.store.takeDrafts(threadId);
-			if (drafts.length > 0) this.options.send(formatSendMessage(this.displayPath(doc.path), drafts));
+			const drafts = doc.store.takeDrafts(threadId, (d) => this.options.send(formatSendMessage(this.displayPath(doc.path), d)));
 			return { sent: drafts.length };
 		}
 		if (action[0] === "threads" && action.length === 3) {
@@ -321,8 +321,8 @@ export class ArtifactServer {
 				status: threadStatus(t),
 				attachment: attach(t.anchor, rendered.blocks),
 				quote: t.anchor.quote,
-				context: t.anchor.context,
-				path: t.anchor.path,
+				highlight: t.anchor.movedTo ?? t.anchor.quote,
+				context: t.anchor.movedTo ? undefined : t.anchor.context,
 				diagram: t.anchor.diagramSource !== undefined,
 				messages: t.messages,
 			})),

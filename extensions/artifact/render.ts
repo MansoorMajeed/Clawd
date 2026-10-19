@@ -82,9 +82,13 @@ export function normalize(text: string): string {
 	return text.replace(/\s+/g, " ").trim();
 }
 
+// Block-level tags separate words; inline tags (strong, code, a, ...) must not.
+const BLOCK_TAGS = /<\/?(?:p|li|ul|ol|table|thead|tbody|tr|td|th|h[1-6]|pre|blockquote|div|br|hr)\b[^>]*>/gi;
+
 function plainText(html: string): string {
 	const text = html
-		.replace(/<[^>]*>/g, " ")
+		.replace(BLOCK_TAGS, " ")
+		.replace(/<[^>]*>/g, "")
 		.replace(/&lt;/g, "<")
 		.replace(/&gt;/g, ">")
 		.replace(/&quot;/g, '"')

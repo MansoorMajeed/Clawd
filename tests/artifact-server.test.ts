@@ -157,6 +157,15 @@ describe("ArtifactServer", () => {
 		expect(message).toContain('Diagram label: "user message"\nMermaid source: Browser->>Session: user message');
 	});
 
+	it("re-finds the block by its quote when the block changed before the comment was saved", async () => {
+		const stale = (await blocks()).find((b) => b.kind === "decision")!;
+		writeFileSync(docPath, "# Plan\n\n## Decisions\n\n> [!DECISION]\n> 1. Pick A, probably.\n");
+		const post = (quote: string) =>
+			call(server.port, `/api/doc/${docId}/comments?${q}`, { method: "POST", body: { blockId: stale.id, quote, text: "x" } });
+		expect((await post("Pick A")).status).toBe(200);
+		expect((await post("Pick Z")).status).toBe(409);
+	});
+
 	it("pushes a change event when the file is edited", async () => {
 		const event = await nextEvent(server.port, `/api/events?doc=${docId}&${q}`, () =>
 			writeFileSync(docPath, "# Plan\n\nEdited.\n"),
@@ -218,8 +227,11 @@ describe("artifact extension", () => {
 		await call(port, `/api/doc/${id}/send?token=${token}`, { method: "POST", body: {} });
 		expect(pi.sendUserMessage).toHaveBeenLastCalledWith(expect.stringContaining("idle"));
 
-		const reply = await tools.artifact_reply.execute("2", { file: "plan.md", thread: 1, text: "done" }, undefined, undefined, ctx);
+		const reply = await tools.artifact_reply.execute("2", { file: "plan.md", thread: 1, text: "done", moved_to: "Pick B" }, undefined, undefined, ctx);
 		expect(reply.content[0].text).toContain("thread #1");
+		const after = JSON.parse((await call(port, `/api/doc/${id}?token=${token}`)).body);
+		expect(after.threads[0]).toMatchObject({ quote: "Decisions", highlight: "Pick B" });
+		expect(after.threads[0].path).toBeUndefined();
 
 		await handlers.session_shutdown({}, ctx);
 		await expect(call(port, `/api/doc/${id}?token=${token}`)).rejects.toThrow();

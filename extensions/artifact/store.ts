@@ -99,24 +99,32 @@ export class ThreadStore {
 		this.save();
 	}
 
-	/** Mark unsent comments as sent, for one thread or all, and return them. Resolved threads are skipped. */
-	takeDrafts(threadId?: number): SentDrafts[] {
+	/**
+	 * Unsent comments for one thread or all (resolved threads skipped). They are
+	 * marked sent only after `deliver` returns, so a failed delivery loses nothing.
+	 */
+	takeDrafts(threadId?: number, deliver?: (drafts: SentDrafts[]) => void): SentDrafts[] {
 		this.load();
 		const out: SentDrafts[] = [];
+		const unsent: ThreadMessage[] = [];
 		for (const thread of this.data.threads) {
 			if (thread.resolved || (threadId !== undefined && thread.id !== threadId)) continue;
 			const drafts = thread.messages.filter((m) => !m.sent);
 			if (drafts.length === 0) continue;
-			for (const m of drafts) m.sent = true;
+			unsent.push(...drafts);
 			out.push({ thread, texts: drafts.map((m) => m.text) });
 		}
-		if (out.length > 0) this.save();
+		if (out.length === 0) return out;
+		deliver?.(out);
+		for (const m of unsent) m.sent = true;
+		this.save();
 		return out;
 	}
 
-	addReply(threadId: number, text: string): Thread {
+	addReply(threadId: number, text: string, movedTo?: string): Thread {
 		this.load();
 		const thread = this.require(threadId);
+		if (movedTo) thread.anchor.movedTo = movedTo;
 		thread.messages.push({ author: "agent", text, at: new Date().toISOString(), sent: true });
 		this.save();
 		return thread;

@@ -77,11 +77,17 @@ export function createArtifactExtension(deps: Deps) {
 				file: Type.String({ description: "Document path as shown in the thread header" }),
 				thread: Type.Number({ description: "Thread number from the header" }),
 				text: Type.String({ description: "Reply text (plain text, no Markdown or HTML rendering)" }),
+				moved_to: Type.Optional(
+					Type.String({
+						description:
+							"If you rewrote the text this thread points at, the exact new text (as it reads on the page) so the thread stays attached to it",
+					}),
+				),
 			}),
 			async execute(_id, params, _signal, _onUpdate, ctx) {
 				const abs = resolve(ctx.cwd, params.file);
-				if (!server?.reply(abs, params.thread, params.text)) {
-					new ThreadStore(deps.root, abs).addReply(params.thread, params.text);
+				if (!server?.reply(abs, params.thread, params.text, params.moved_to)) {
+					new ThreadStore(deps.root, abs).addReply(params.thread, params.text, params.moved_to);
 				}
 				return text(`Replied to thread #${params.thread} on ${params.file}.`);
 			},

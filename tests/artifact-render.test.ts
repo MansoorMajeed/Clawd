@@ -60,6 +60,13 @@ describe("renderDocument", () => {
 		expect(renderDocument("```mermaid\nA-->B: hi\n```").blocks[0].plain).toBe("A-->B: hi");
 	});
 
+	it("keeps inline formatting joined to its neighbors in plain text", () => {
+		const [para, table] = renderDocument("Use **bold**. Then `foo`bar &amp; more.\n\n| Name | Value |\n|---|---|\n| alpha | beta |").blocks;
+		expect(para.plain).toBe("Use bold. Then foobar & more.");
+		expect(table.plain).toBe("Name Value alpha beta");
+		expect(attach({ section: "", path: "", blockId: "gone", quote: "alpha beta" }, [para, table])).toEqual({ status: "exact", blockId: table.id });
+	});
+
 	it("gives duplicate headings and blocks distinct IDs", () => {
 		const doc = renderDocument("## Notes\n\nSame.\n\nSame.\n\n## Notes\n\nOther.");
 		expect(doc.blocks.map((b) => b.heading)).toEqual(["notes", "notes", "notes", "notes-1", "notes-1"]);
@@ -166,6 +173,12 @@ describe("attach", () => {
 			status: "exact",
 			blockId: second.id,
 		});
+	});
+
+	it("prefers the text the agent moved the thread to", () => {
+		const edited = renderDocument(DOC.replace("Ship on Friday", "Ship next week"));
+		const moved = { ...anchor, movedTo: "Ship next week" };
+		expect(attach(moved, edited.blocks)).toEqual({ status: "exact", blockId: blockByText(edited, "Ship next week").id });
 	});
 
 	it("treats anchors from the old block format as outdated", () => {

@@ -91,6 +91,28 @@ describe("ThreadStore", () => {
 		expect(store.takeDrafts().map((d) => d.texts)).toEqual([["parked"]]);
 	});
 
+	it("marks drafts sent only after delivery succeeds", () => {
+		const store = new ThreadStore(root, DOC);
+		store.addComment({ anchor, text: "one" });
+		expect(() =>
+			store.takeDrafts(undefined, () => {
+				throw new Error("boom");
+			}),
+		).toThrow("boom");
+		expect(threadStatus(store.get(1)!)).toBe("draft");
+		const delivered: string[][] = [];
+		store.takeDrafts(undefined, (drafts) => delivered.push(...drafts.map((d) => d.texts)));
+		expect(delivered).toEqual([["one"]]);
+		expect(threadStatus(store.get(1)!)).toBe("sent");
+	});
+
+	it("records where the agent moved a thread", () => {
+		const store = new ThreadStore(root, DOC);
+		store.addComment({ anchor, text: "q" });
+		store.addReply(1, "Reworded it", "Pick option B");
+		expect(store.get(1)!.anchor).toMatchObject({ quote: "Pick option A", movedTo: "Pick option B" });
+	});
+
 	it("rejects replies to unknown threads", () => {
 		const store = new ThreadStore(root, DOC);
 		expect(() => store.addReply(9, "x")).toThrow(/thread #9/);
@@ -98,10 +120,15 @@ describe("ThreadStore", () => {
 });
 
 describe("formatSendMessage", () => {
+	it("sends threads saved by an older viewer version without failing", () => {
+		const legacy = { thread: { id: 7, anchor: { heading: "x", text: "y" } as any, resolved: false, messages: [] }, texts: ["still here"] };
+		expect(formatSendMessage("plan.md", [legacy])).toContain("[artifact viewer · plan.md · thread #7]\n\nstill here");
+	});
+
 	it("tells the agent the section, selection, context, and comment", () => {
 		const store = new ThreadStore(root, DOC);
 		store.addComment({ anchor, text: "Why A?\nNot B?" });
-		store.addComment({ anchor: { section: "", path: "", blockId: "top--1", quote: "x".repeat(400) }, text: "Too long" });
+		store.addComment({ anchor: { section: "", path: "", blockId: "top--1", quote: "x".repeat(400) }, text: "Long" });
 		store.addComment({
 			anchor: { section: "flow", path: "Plan › Flow", blockId: "flow--1", quote: "user message", diagramSource: "Browser->>Session: user message" },
 			text: "Tool call instead?",
@@ -117,9 +144,9 @@ describe("formatSendMessage", () => {
 				"Why A?\nNot B?",
 				"",
 				"[artifact viewer · .scratch/plans/todo/plan.md · thread #2]",
-				`Selected: "${"x".repeat(300)}…"`,
+				`Selected: "${"x".repeat(400)}"`,
 				"",
-				"Too long",
+				"Long",
 				"",
 				"[artifact viewer · .scratch/plans/todo/plan.md · thread #3]",
 				"Section: Plan › Flow",
@@ -128,7 +155,7 @@ describe("formatSendMessage", () => {
 				"",
 				"Tool call instead?",
 				"",
-				'Reply to each thread with artifact_reply (file: ".scratch/plans/todo/plan.md"). Edit the file if the document should change.',
+				'Reply to each thread with artifact_reply (file: ".scratch/plans/todo/plan.md"). Edit the file if the document should change; if you rewrite the text a thread points at, pass moved_to with the new text.',
 			].join("\n"),
 		);
 	});

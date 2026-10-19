@@ -14,6 +14,8 @@ export interface Anchor {
 	context?: string;
 	/** For diagram labels: the matching Mermaid source line(s). */
 	diagramSource?: string;
+	/** Set by the agent (artifact_reply moved_to) after rewriting the commented text. */
+	movedTo?: string;
 }
 
 export type Attachment =
@@ -22,13 +24,18 @@ export type Attachment =
 	| { status: "outdated" };
 
 /**
- * Where to show a thread on the current page: the original block if it still
+ * Where to show a thread on the current page: where the agent moved it, else the original block if it still
  * contains the quote, else a block containing the surrounding text, else a
  * block under the same heading containing the quote, else the heading itself,
  * else nowhere (outdated).
  */
 export function attach(anchor: Anchor, blocks: Block[]): Attachment {
 	if (typeof anchor.quote !== "string" || !anchor.quote) return { status: "outdated" };
+	if (anchor.movedTo) {
+		const movedTo = normalize(anchor.movedTo);
+		const moved = blocks.find((b) => b.plain.includes(movedTo));
+		if (moved) return { status: "exact", blockId: moved.id };
+	}
 	const quote = normalize(anchor.quote);
 	const context = anchor.context ? normalize(anchor.context) : undefined;
 
