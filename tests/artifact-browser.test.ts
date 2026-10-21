@@ -193,6 +193,7 @@ browserTests("artifact viewer in Chrome", () => {
 		server.comment(file, "Another passage to review.", "Already handled");
 		await page.until(`document.querySelectorAll('[data-thread-anchor]').length === 2`);
 		expect(await page.evaluate(`document.querySelector('a[href="#spec"] [data-thread-anchor="1"]').dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true}))`), "link click must not be cancelled").toBe(true);
+		expect(await page.evaluate(`(() => {const a = document.querySelector('a[href="#spec"]'); a.focus(); return a.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles:true, cancelable:true}));})()`), "Enter on a focused link must not be cancelled").toBe(true);
 		await post("threads/2/resolve", { resolved: true });
 		await page.until(`!document.querySelector('[data-thread-anchor="2"]')`);
 		expect(await page.evaluate(`!!document.querySelector('[data-thread-anchor="1"]')`)).toBe(true);
