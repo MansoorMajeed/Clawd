@@ -1,5 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, watch, writeFileSync, type FSWatcher } from "node:fs";
+import { closeSync, existsSync, fchmodSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, watch, writeFileSync, type FSWatcher } from "node:fs";
 import { createServer, request, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { createRequire } from "node:module";
 import { basename, dirname, join, relative } from "node:path";
@@ -108,6 +108,7 @@ const SECURITY_HEADERS = {
 };
 
 const MAX_BODY = 64 * 1024;
+const MAX_SOURCE_BODY = 1024 * 1024;
 const MAX_QUOTE = 1000;
 
 class HttpError extends Error {
@@ -216,6 +217,11 @@ export class ArtifactServer {
 		return `http://127.0.0.1:${this.port}/doc/${id}?token=${this.token}`;
 	}
 
+	/** Number of viewer tabs currently connected to a document. */
+	viewers(path: string): number {
+		return [...this.docs.values()].find((d) => d.path === path)?.clients.size ?? 0;
+	}
+
 	documents(): Array<{ id: string; path: string; url: string }> {
 		return [...this.docs.values()].map((d) => ({ id: d.id, path: d.path, url: this.url(d.id) }));
 	}
@@ -236,6 +242,32 @@ export class ArtifactServer {
 		if (!tab) return false;
 		tab.write(`event: show\ndata: ${JSON.stringify({ url })}\n\n`);
 		return true;
+	}
+
+	comment(path: string, quote: string, text: string, section?: string): number {
+		quote = normalize(quote);
+		text = text.trim();
+		if (!quote) throw new Error("Nothing selected");
+		if (!text) throw new Error("Empty comment");
+		const { blocks } = renderDocument(readFileSync(path, "utf8"));
+		const scope = section === undefined ? undefined : normalize(section);
+		const matches = blocks.filter((b) => b.plain.includes(quote) &&
+			(scope === undefined || b.path === scope || b.heading === scope));
+		if (matches.length === 0) throw new Error("Quote not found in the requested document section");
+		const block = matches[0];
+		const first = block.plain.indexOf(quote);
+		if (matches.length !== 1 || block.plain.indexOf(quote, first + 1) !== -1) {
+			throw new Error("Ambiguous quote: include more text or specify a unique section");
+		}
+		const anchor: Anchor = { section: block.heading, path: block.path, blockId: block.id, quote };
+		if (block.kind === "mermaid") {
+			anchor.diagramSource = (block.source ?? "").split("\n")
+				.filter((line) => normalize(line).includes(quote)).slice(0, 3).map((line) => line.trim()).join(" / ");
+		}
+		const doc = this.doc(this.open(path).id);
+		const thread = doc.store.addReview({ anchor, text });
+		this.notify(doc);
+		return thread.id;
 	}
 
 	/** Returns false when the document is not open in this server. */
@@ -346,6 +378,46 @@ export class ArtifactServer {
 		if (parts[0] === "api" && parts[1] === "doc" && parts[2]) {
 			const doc = this.doc(parts[2]);
 			const action = parts.slice(3);
+			if (action[0] === "source" && action.length === 1) {
+				if (method === "GET") {
+					this.json(res, 200, this.source(doc));
+					return;
+				}
+				if (method === "POST") {
+					const body = await readJson(req, MAX_SOURCE_BODY);
+					if (typeof body.source !== "string" || typeof body.version !== "string") {
+						throw new HttpError(400, "Source and version must be strings");
+					}
+					if (this.source(doc).version !== body.version) {
+						throw new HttpError(409, "The document changed. Reload the source before saving again.");
+					}
+					// Resolve symlinks so replacement changes their target, not the document link.
+					const target = realpathSync(doc.path);
+					const mode = statSync(target).mode & 0o7777;
+					const temporary = join(dirname(target), `.artifact-${randomBytes(12).toString("hex")}.tmp`);
+					const fd = openSync(temporary, "wx", 0o600);
+					let replaced = false;
+					try {
+						try {
+							writeFileSync(fd, body.source, "utf8");
+							// Creation applies umask; restore the original permissions after writing.
+							fchmodSync(fd, mode);
+						} finally {
+							closeSync(fd);
+						}
+						if (this.source(doc).version !== body.version || realpathSync(doc.path) !== target) {
+							throw new HttpError(409, "The document changed. Reload the source before saving again.");
+						}
+						renameSync(temporary, target);
+						replaced = true;
+					} finally {
+						if (!replaced) unlinkSync(temporary);
+					}
+					this.notify(doc);
+					this.json(res, 200, { version: createHash("sha256").update(body.source, "utf8").digest("hex") });
+					return;
+				}
+			}
 			if (method === "GET" && action.length === 0) {
 				this.json(res, 200, this.payload(doc));
 				return;
@@ -413,6 +485,12 @@ export class ArtifactServer {
 		return doc;
 	}
 
+	private source(doc: OpenDoc): { source: string; version: string } {
+		if (!existsSync(doc.path)) throw new HttpError(404, `${this.displayPath(doc.path)} no longer exists`);
+		const source = readFileSync(doc.path, "utf8");
+		return { source, version: createHash("sha256").update(source, "utf8").digest("hex") };
+	}
+
 	private payload(doc: OpenDoc) {
 		if (!existsSync(doc.path)) throw new HttpError(404, `${this.displayPath(doc.path)} no longer exists`);
 		const rendered = renderDocument(readFileSync(doc.path, "utf8"));
@@ -463,12 +541,12 @@ export class ArtifactServer {
 	}
 }
 
-async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+async function readJson(req: IncomingMessage, limit = MAX_BODY): Promise<Record<string, unknown>> {
 	let size = 0;
 	const chunks: Buffer[] = [];
 	for await (const chunk of req) {
 		size += (chunk as Buffer).length;
-		if (size > MAX_BODY) throw new HttpError(413, "Body too large");
+		if (size > limit) throw new HttpError(413, "Body too large");
 		chunks.push(chunk as Buffer);
 	}
 	if (chunks.length === 0) return {};

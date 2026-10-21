@@ -15,6 +15,29 @@ beforeEach(() => {
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 describe("ThreadStore", () => {
+	it("persists agent-first review threads without creating user drafts", () => {
+		const store = new ThreadStore(root, DOC);
+		const review = store.addReview({ anchor, text: "Explain why A wins." });
+		expect(review).toMatchObject({ id: 1, anchor, resolved: false, messages: [{ author: "agent", text: "Explain why A wins.", sent: true }] });
+		const reloaded = new ThreadStore(root, DOC);
+		expect(reloaded.get(1)).toEqual(review);
+		expect(threadStatus(reloaded.get(1)!)).toBe("review");
+		const deliver = () => { throw new Error("An agent review must not be sent as user input"); };
+		expect(reloaded.takeDrafts(undefined, deliver)).toEqual([]);
+
+		reloaded.addComment({ threadId: 1, text: "Here is my reasoning." });
+		expect(threadStatus(reloaded.get(1)!)).toBe("draft");
+		reloaded.discardDrafts(1);
+		expect(threadStatus(reloaded.get(1)!)).toBe("review");
+		reloaded.addComment({ threadId: 1, text: "A is cheaper." });
+		expect(reloaded.takeDrafts(1).map((d) => d.texts)).toEqual([["A is cheaper."]]);
+		expect(threadStatus(reloaded.get(1)!)).toBe("sent");
+		reloaded.addReply(1, "That addresses it.");
+		expect(threadStatus(reloaded.get(1)!)).toBe("replied");
+		reloaded.setResolved(1, true);
+		expect(threadStatus(reloaded.get(1)!)).toBe("resolved");
+	});
+
 	it("creates draft threads and appends follow-ups", () => {
 		const store = new ThreadStore(root, DOC);
 		const first = store.addComment({ anchor, text: "Why A?" });
@@ -120,6 +143,18 @@ describe("ThreadStore", () => {
 });
 
 describe("formatSendMessage", () => {
+	it("includes the originating agent review when delivering a user response", () => {
+		const store = new ThreadStore(root, DOC);
+		store.addReview({ anchor, text: "Why does A win?" });
+		store.addReply(1, "Use the revised wording.", "Pick option B");
+		store.addComment({ threadId: 1, text: "Because it is cheaper." });
+		const message = formatSendMessage("plan.md", store.takeDrafts());
+		expect(message).toContain('Selected: "Pick option A"');
+		expect(message).toContain('Current anchor: "Pick option B"');
+		expect(message).toContain("Agent review:\nWhy does A win?");
+		expect(message).toContain("User response:\nBecause it is cheaper.");
+	});
+
 	it("sends threads saved by an older viewer version without failing", () => {
 		const legacy = { thread: { id: 7, anchor: { heading: "x", text: "y" } as any, resolved: false, messages: [] }, texts: ["still here"] };
 		expect(formatSendMessage("plan.md", [legacy])).toContain("[artifact viewer · plan.md · thread #7]\n\nstill here");
