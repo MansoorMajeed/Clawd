@@ -19,7 +19,7 @@ This is **not** a sandboxed agent. Pi gives the LLM direct bash access with no b
 ```
 Pi (main agent, Opus)
 ├── Pi's native tools and commands
-├── 18 active extension entrypoints (safety, review, context, displays, utilities)
+├── 17 active extension entrypoints (safety, review, context, displays, utilities)
 └── 19 active skills (/skill:plan, /skill:ship, /skill:debug, etc.)
 ```
 
@@ -29,12 +29,14 @@ Pi (main agent, Opus)
 npm install -g @earendil-works/pi-coding-agent
 pi install git:github.com/MansoorMajeed/Clawd
 pi install npm:pi-subagents
+pi install git:github.com/MansoorMajeed/pi-workshop
 ```
 
 ## Prerequisites
 
 - [Pi](https://github.com/earendil-works/pi) installed (`npm install -g @earendil-works/pi-coding-agent`)
 - [pi-subagents](https://github.com/nicobailon/pi-subagents) installed (`pi install npm:pi-subagents`) for non-interactive subagents, review loops, and parallel review workflows
+- Optional: [pi-workshop](https://github.com/MansoorMajeed/pi-workshop) (`pi install git:github.com/MansoorMajeed/pi-workshop`) to read and discuss plans in the browser, with comment threads on any passage
 
 Clawd is tested against Pi **1.0.4**. Its wildcard peer dependencies allow Pi to provide the runtime packages; they are not a claim of compatibility with every Pi version.
 
@@ -64,29 +66,11 @@ Existing extension statuses (including GPT quota, reset time, and git status) re
 
 ## Active extensions
 
-The 18 active entrypoints provide the workflow prompt; permission and read-before-edit guards; DuckDuckGo search; interactive review; a browser viewer for commenting on plans; context and session analytics; session-name suggestions; a `/clear` reminder for Pi's native `/new`; `/btw`; `/split-fork`; desktop notifications; and the custom footer/status displays for GPT quota, git state, session age, and response throughput. Extension commands are `/add-dir`, `/add-dir-read`, `/review`, `/end-review`, `/context`, `/session-breakdown`, `/suggest-name`, `/clear`, `/btw`, `/split-fork`, and `/artifact`.
+The 17 active entrypoints provide the workflow prompt; permission and read-before-edit guards; DuckDuckGo search; interactive review; context and session analytics; session-name suggestions; a `/clear` reminder for Pi's native `/new`; `/btw`; `/split-fork`; desktop notifications; and the custom footer/status displays for GPT quota, git state, session age, and response throughput. Extension commands are `/add-dir`, `/add-dir-read`, `/review`, `/end-review`, `/context`, `/session-breakdown`, `/suggest-name`, `/clear`, `/btw`, and `/split-fork`.
 
-### Artifact viewer
+### Discussing plans in the browser
 
-`/artifact <file>` (or the agent's `artifact_open` tool) renders a Markdown document in your browser. Select any text and click **Comment**, click the **+** next to any paragraph, list item, table row, heading, or code block, or click a label in a Mermaid diagram. Comments stay as drafts until you send one or **Send all**; they arrive in the same terminal session as a user message tagged `[artifact viewer · <file> · thread #N]`, with the section, the exact selected text, and its surrounding text (or the diagram label and its Mermaid source line). The agent answers each thread with `artifact_reply`; substantive answers stay in the viewer rather than being repeated in terminal chat. Either side can be the author: the agent can start anchored review threads with `artifact_comment` (`file`, `quote`, `text`, and optional `section` to distinguish repeated passages). Review comments do not edit the document or send a prompt until you respond and send it. Take turns writing and reviewing; asking for a review means comments, not edits, unless you ask for revisions. The page refreshes live. Each thread keeps what you commented on as it was: it sits next to that text and highlights it while the text still exists, otherwise it shows under its section heading marked "Text changed", or in an outdated tray if the section is gone. When the agent rewrites the text a thread points at, it passes the new text as `moved_to`, so the thread follows it. Threads can be collapsed individually. On wide screens they appear in a right-hand rail, leaving the document readable; on narrow screens they appear inline. Selecting a thread or its highlighted passage connects the discussion to its location in the document.
-
-**Edit** opens the Markdown source in the browser. **Save** writes it back to the same file; **Cancel** returns to the reading view. Saving checks the version you started from: if another editor changed the file, it refuses to overwrite those changes and keeps your draft available. This is turn-based source editing, not rich-text editing or automatic merging. Source saves have a 1 MiB JSON request limit (including escaped Markdown); larger documents can still be edited in your normal editor.
-
-If a viewer tab is already open (from any session), new documents open in that tab instead of a new one; a tab with a half-typed comment or an active source editor shows a link instead of switching. `/artifact` lists open documents and `/artifact close` stops the server, which also stops when the session ends. The Markdown file stays the real document, so there is nothing to convert back.
-
-Documents support GitHub-style callouts (`> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`), `> [!DECISION]` cards, tables, and Mermaid diagrams (bundled, works offline). Thread state and the server registry live in `~/.pi/agent/artifacts/`; the sidebar lists documents from every running session.
-
-Each server prefers a port from 47821 to 47840 and falls back to a random one, so a restarted session usually comes back at the same address and open tabs reconnect.
-
-Browser interaction tests use an installed Chrome/Chromium without extra npm dependencies:
-
-```bash
-ARTIFACT_BROWSER_TESTS=1 npx vitest run tests/artifact-browser.test.ts
-```
-
-On systems without macOS Google Chrome at its standard path, set `CHROME_BIN` to your browser executable. Normal `make check` skips these opt-in tests.
-
-Security: each session's server listens on `127.0.0.1` only and requires a random token in the URL (generated once and saved in `~/.pi/agent/artifacts/token`), so other machines and other websites in your browser cannot send prompts into the session. Raw HTML in documents and all thread text are shown as text, never executed, and a Content-Security-Policy allows only the bundled scripts.
+The browser viewer for plans and other Markdown documents, formerly the `artifact` extension, is now its own package: [pi-workshop](https://github.com/MansoorMajeed/pi-workshop). Install it to get `/workshop` and the `workshop_open`, `workshop_comment`, and `workshop_reply` tools; the `plan` skill uses them when they are available. Existing threads are copied from `~/.pi/agent/artifacts/` on first use.
 
 `/clear` only reminds users to use Pi's native `/new` command; it does not alias `/new` or change the current session. The old session-reset behavior and `multi-edit` override remain removed. Use Pi's native `edit` tool instead; it accepts multiple disjoint replacements in one file but does not provide cross-file batches or Codex-style patch application.
 

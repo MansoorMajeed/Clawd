@@ -15,7 +15,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const activeExtensions = [
-	"extensions/artifact/index.ts",
 	"extensions/btw.ts",
 	"extensions/chatgpt-limit-status.ts",
 	"extensions/clear.ts",
