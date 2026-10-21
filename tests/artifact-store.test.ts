@@ -155,7 +155,7 @@ describe("formatSendMessage", () => {
 				"",
 				"Tool call instead?",
 				"",
-				'Reply to each thread with artifact_reply (file: ".scratch/plans/todo/plan.md"). Edit the file if the document should change; if you rewrite the text a thread points at, pass moved_to with the new text.',
+				'Reply to each thread with artifact_reply (file: ".scratch/plans/todo/plan.md"). Put the substantive response in artifact_reply. Do not repeat or paraphrase it in terminal chat; use at most a brief acknowledgment. Edit the file if the document should change; if you rewrite the text a thread points at, pass moved_to with the new text.',
 			].join("\n"),
 		);
 	});

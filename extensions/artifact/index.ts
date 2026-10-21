@@ -76,7 +76,7 @@ export function createArtifactExtension(deps: Deps) {
 			name: "artifact_reply",
 			label: "Reply in artifact thread",
 			description:
-				"Reply to a comment thread from the artifact viewer. The reply appears under the user's comment in the browser. Plain text only. Edit the document itself separately when it should change.",
+				"Reply to a comment thread from the artifact viewer. The reply appears under the user's comment in the browser. For comments received from the artifact viewer, put the substantive response here. Do not repeat or paraphrase it in terminal chat; use at most a brief acknowledgment. Plain text only. Edit the document itself separately when it should change.",
 			parameters: Type.Object({
 				file: Type.String({ description: "Document path as shown in the thread header" }),
 				thread: Type.Number({ description: "Thread number from the header" }),

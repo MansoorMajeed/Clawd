@@ -17,6 +17,6 @@ export function formatSendMessage(displayPath: string, sent: SentDrafts[]): stri
 	});
 	return [
 		...sections,
-		`Reply to each thread with artifact_reply (file: "${displayPath}"). Edit the file if the document should change; if you rewrite the text a thread points at, pass moved_to with the new text.`,
+		`Reply to each thread with artifact_reply (file: "${displayPath}"). Put the substantive response in artifact_reply. Do not repeat or paraphrase it in terminal chat; use at most a brief acknowledgment. Edit the file if the document should change; if you rewrite the text a thread points at, pass moved_to with the new text.`,
 	].join("\n\n");
 }
