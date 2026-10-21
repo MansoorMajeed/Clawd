@@ -49,7 +49,7 @@
 			body: body === undefined ? undefined : JSON.stringify(body),
 		});
 		const data = await res.json().catch(() => ({}));
-		if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+		if (!res.ok) throw Object.assign(new Error(data.error || `Request failed (${res.status})`), { status: res.status });
 		return data;
 	}
 
@@ -238,7 +238,11 @@
 		render();
 		try {
 			const { source, version } = await api(`/api/doc/${docId}/source`);
-			state.editor = { source, original: source, version, saving: false, error: undefined };
+			// Textareas only produce LF; edit in LF and restore CRLF on save so a small edit
+			// doesn't rewrite every line ending in the file.
+			const crlf = source.includes("\r\n") && !/(^|[^\r])\n/.test(source);
+			const text = crlf ? source.replace(/\r\n/g, "\n") : source;
+			state.editor = { source: text, original: text, crlf, version, saving: false, error: undefined, conflict: false };
 			state.focus = "source";
 		} catch (error) {
 			toast(error.message);
@@ -248,22 +252,39 @@
 		}
 	}
 
-	async function saveSource() {
+	async function saveSource(overwrite = false) {
 		const editor = state.editor;
 		if (!editor || editor.saving) return;
+		if (overwrite && !window.confirm("Replace the changed document with your version? The other changes will be lost.")) return;
 		editor.saving = true;
 		editor.error = undefined;
 		render();
 		try {
-			await api(`/api/doc/${docId}/source`, { source: editor.source, version: editor.version });
+			// Overwriting is an explicit choice after a conflict: save against the current version.
+			if (overwrite) editor.version = (await api(`/api/doc/${docId}/source`)).version;
+			const source = editor.crlf ? editor.source.replace(/\n/g, "\r\n") : editor.source;
+			await api(`/api/doc/${docId}/source`, { source, version: editor.version });
 			state.editor = undefined;
 			await load();
 		} catch (error) {
 			editor.saving = false;
 			editor.error = error.message;
+			editor.conflict = error.status === 409;
 			state.focus = "source";
 			render();
 		}
+	}
+
+	function cancelSource() {
+		if (state.editor.source !== state.editor.original && !window.confirm("Discard your unsaved changes to the source?")) return;
+		state.editor = undefined;
+		render();
+	}
+
+	async function reloadSource() {
+		if (!window.confirm("Discard your draft and load the current document?")) return;
+		state.editor = undefined;
+		await editSource();
 	}
 
 	function sourceEditor() {
@@ -283,8 +304,11 @@
 			textarea,
 			editor.error && h("p", { id: "source-error", class: "source-error", role: "alert" }, editor.error),
 			h("div", { class: "source-actions" },
-				h("button", { class: "btn btn-primary", disabled: editor.saving, onclick: saveSource }, editor.saving ? "Saving…" : "Save"),
-				h("button", { class: "btn", disabled: editor.saving, onclick: () => { state.editor = undefined; render(); } }, "Cancel"),
+				editor.conflict
+					? h("button", { class: "btn btn-primary", disabled: editor.saving, onclick: () => saveSource(true) }, editor.saving ? "Saving…" : "Overwrite with my version")
+					: h("button", { class: "btn btn-primary", disabled: editor.saving, onclick: () => saveSource() }, editor.saving ? "Saving…" : "Save"),
+				editor.conflict && h("button", { class: "btn", disabled: editor.saving, onclick: reloadSource }, "Reload document"),
+				h("button", { class: "btn", disabled: editor.saving, onclick: cancelSource }, "Cancel"),
 			),
 		);
 	}
@@ -423,7 +447,7 @@
 				class: `thread${collapsed ? " collapsed" : ""}`,
 				"data-thread": t.id,
 				onclick: (event) => {
-					if (!event.target.closest("button, a, textarea, .composer")) selectThread(t.id, "passage");
+					if (!event.target.closest("button, a, textarea, .composer") && window.getSelection()?.isCollapsed !== false) selectThread(t.id, "passage");
 				},
 			},
 			head,
@@ -464,7 +488,7 @@
 		body.innerHTML = b.html; // Server-rendered with raw HTML escaped.
 		const comments = h("aside", { class: "block-comments", "data-comment-block": b.id, "aria-label": "Comments on this passage" });
 		for (const t of threads) {
-			if (t.attachment.status === "exact" && !t.diagram) highlight(body, t.highlight ?? t.quote, t.context, "hl", t.occurrence, t.id);
+			if (t.attachment.status === "exact" && !t.diagram && t.status !== "resolved") highlight(body, t.highlight ?? t.quote, t.context, "hl", t.occurrence, t.id);
 			comments.append(thread(t));
 		}
 		for (const [key, anchor] of state.pending) {
@@ -607,6 +631,8 @@
 		if (!mark) return;
 		if (event.type === "keydown" && event.key !== "Enter" && event.key !== " ") return;
 		if (event.type === "click" && !window.getSelection()?.isCollapsed) return;
+		// Let links inside a highlighted passage navigate; the mark stays reachable by keyboard.
+		if (event.type === "click" && event.target.closest("a[href]")) return;
 		event.preventDefault();
 		const ids = [];
 		while (mark) {

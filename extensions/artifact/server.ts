@@ -217,6 +217,11 @@ export class ArtifactServer {
 		return `http://127.0.0.1:${this.port}/doc/${id}?token=${this.token}`;
 	}
 
+	/** Number of viewer tabs currently connected to a document. */
+	viewers(path: string): number {
+		return [...this.docs.values()].find((d) => d.path === path)?.clients.size ?? 0;
+	}
+
 	documents(): Array<{ id: string; path: string; url: string }> {
 		return [...this.docs.values()].map((d) => ({ id: d.id, path: d.path, url: this.url(d.id) }));
 	}

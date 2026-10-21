@@ -91,7 +91,11 @@ export function createArtifactExtension(deps: Deps) {
 			async execute(_id, params, _signal, _onUpdate, ctx) {
 				const abs = await register(ctx, params.file);
 				const thread = server!.comment(abs, params.quote, params.text, params.section);
-				return text(`Created review thread #${thread} on ${params.file}.`);
+				const { url } = server!.open(abs);
+				const unseen = server!.viewers(abs) === 0
+					? " No viewer tab is showing this document; call artifact_open when the user should see the review."
+					: "";
+				return text(`Created review thread #${thread} on ${params.file}: ${url}.${unseen}`);
 			},
 		});
 

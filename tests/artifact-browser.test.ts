@@ -151,6 +151,68 @@ browserTests("artifact viewer in Chrome", () => {
 		await page.until(`document.querySelector('.doc h1')?.textContent === 'Outside revision'`);
 	});
 
+	it("recovers from a stale save by overwriting or reloading", async () => {
+		const typeDraft = (text: string) => page.evaluate(`(() => {const e = document.querySelector('[data-source-editor]'); e.value = ${JSON.stringify(text)}; e.dispatchEvent(new Event('input', {bubbles:true}));})()`);
+		await page.evaluate("window.confirm = () => true");
+		await page.click("Edit");
+		await page.until(`!!document.querySelector('[data-source-editor]')`);
+		await typeDraft("# Mine\n");
+		writeFileSync(file, "# Theirs\n");
+		await page.click("Save");
+		await page.until(`!![...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Overwrite with my version')`);
+		await page.click("Overwrite with my version");
+		await page.until(`document.querySelector('.doc h1')?.textContent === 'Mine'`);
+		expect(readFileSync(file, "utf8")).toBe("# Mine\n");
+
+		await page.click("Edit");
+		await page.until(`!!document.querySelector('[data-source-editor]')`);
+		await typeDraft("# Discard me\n");
+		writeFileSync(file, "# Newest\n");
+		await page.click("Save");
+		await page.until(`!![...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Reload document')`);
+		await page.click("Reload document");
+		await page.until(`document.querySelector('[data-source-editor]')?.value === '# Newest\\n'`);
+		expect(readFileSync(file, "utf8")).toBe("# Newest\n");
+	});
+
+	it("keeps CRLF line endings when saving an edit", async () => {
+		writeFileSync(file, "# A shared draft\r\n\r\nFirst line.\r\n");
+		await page.until(`!document.body.textContent.includes('Another passage')`);
+		await page.click("Edit");
+		await page.until(`!!document.querySelector('[data-source-editor]')`);
+		await page.evaluate(`(() => {const e = document.querySelector('[data-source-editor]'); e.value = e.value.replace('First', 'Edited'); e.dispatchEvent(new Event('input', {bubbles:true}));})()`);
+		await page.click("Save");
+		await page.until(`document.body.textContent.includes('Edited line.')`);
+		expect(readFileSync(file, "utf8")).toBe("# A shared draft\r\n\r\nEdited line.\r\n");
+	});
+
+	it("leaves resolved threads unhighlighted and links inside highlights clickable", async () => {
+		writeFileSync(file, "# A shared draft\n\nRead [the spec](#spec) first.\n\nAnother passage to review.\n");
+		await page.until(`!!document.querySelector('.doc a[href="#spec"]')`);
+		server.comment(file, "the spec", "Link a specific section");
+		server.comment(file, "Another passage to review.", "Already handled");
+		await page.until(`document.querySelectorAll('[data-thread-anchor]').length === 2`);
+		expect(await page.evaluate(`document.querySelector('a[href="#spec"] [data-thread-anchor="1"]').dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true}))`), "link click must not be cancelled").toBe(true);
+		await post("threads/2/resolve", { resolved: true });
+		await page.until(`!document.querySelector('[data-thread-anchor="2"]')`);
+		expect(await page.evaluate(`!!document.querySelector('[data-thread-anchor="1"]')`)).toBe(true);
+	});
+
+	it("does not jump to the passage when selecting text inside a thread card", async () => {
+		server.comment(file, "Another passage to review.", "Copy this review text");
+		await page.until(`!!document.querySelector('[data-thread="1"]')`);
+		await page.evaluate(`(() => {
+			const card = document.querySelector('[data-thread="1"]');
+			const walker = document.createTreeWalker(card, NodeFilter.SHOW_TEXT);
+			let node; while ((node = walker.nextNode()) && !node.textContent.includes('Copy this review')) {}
+			const range = document.createRange(); range.setStart(node, 0); range.setEnd(node, 4);
+			getSelection().removeAllRanges(); getSelection().addRange(range);
+			node.parentElement.dispatchEvent(new MouseEvent('click', {bubbles:true}));
+		})()`);
+		await pause();
+		expect(await page.evaluate(`!!document.querySelector('[data-thread="1"].selected')`)).toBe(false);
+	});
+
 	it("collapses threads and moves them out of the prose on wide screens, inline on narrow screens", async () => {
 		const payload = await (await fetch(`http://127.0.0.1:${server.port}/api/doc/${id}?token=${server.token}`)).json();
 		const block = payload.blocks.find((b: any) => b.kind === "paragraph");

@@ -508,6 +508,8 @@ describe("artifact extension", () => {
 		try {
 			const result = await tools.artifact_comment.execute("1", { file: "plan.md", quote: "Pick A", text: "Explain this.", section: "Decisions" }, undefined, undefined, ctx);
 			expect(result.content[0].text).toContain("thread #1");
+			expect(result.content[0].text).toMatch(/http:\/\/127\.0\.0\.1:\d+\/doc\//);
+			expect(result.content[0].text).toContain("No viewer tab is showing this document");
 			expect(openBrowser).not.toHaveBeenCalled();
 			expect(pi.sendUserMessage).not.toHaveBeenCalled();
 			const entry = JSON.parse(readFileSync(join(root, "servers", readdirSync(join(root, "servers"))[0]), "utf8"));
