@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -342,7 +342,7 @@ describe("Pi session extraction", () => {
 	});
 
 	it("selects the newest fallback across agents and labels the fallback", () => {
-		const dir = mkdtempSync(join(tmpdir(), "extract-session-fallback-"));
+		const dir = realpathSync(mkdtempSync(join(tmpdir(), "extract-session-fallback-")));
 		const project = join(dir, "project");
 		mkdirSync(project);
 		const encodedClaude = project.replace(/\//g, "-");
