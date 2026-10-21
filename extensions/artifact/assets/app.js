@@ -15,7 +15,11 @@
 		/** What a new comment is about, keyed like composers: { blockId, quote, context?, label? }. */
 		pending: new Map(),
 		nextNew: 0,
-		expanded: new Set(),
+		expanded: new Map(),
+		railScroll: 0,
+		selected: undefined,
+		editor: undefined,
+		loadingSource: false,
 		focus: undefined,
 		/** A document the agent asked to show while a comment was being typed. */
 		showLater: undefined,
@@ -102,7 +106,7 @@
 		return { norm, map };
 	}
 
-	function highlight(root, quote, context, cls = "hl", occurrence) {
+	function highlight(root, quote, context, cls = "hl", occurrence, threadId) {
 		const { norm, map } = normalizedText(root);
 		const q = normalizeText(quote);
 		let start = -1;
@@ -132,7 +136,11 @@
 		for (const [node, [from, to]] of segments) {
 			const middle = node.splitText(from);
 			middle.splitText(to - from + 1);
-			const mark = h("mark", { class: cls });
+			const mark = h("mark", {
+				class: cls,
+				"data-thread-anchor": threadId,
+				...(threadId === undefined ? {} : { role: "button", tabindex: "0", "aria-label": `Show thread #${threadId}` }),
+			});
 			middle.replaceWith(mark);
 			mark.append(middle);
 			first ??= mark;
@@ -159,7 +167,11 @@
 
 	async function load() {
 		try {
-			state.doc = await api(`/api/doc/${docId}`);
+			const doc = await api(`/api/doc/${docId}`);
+			for (const t of doc.threads) {
+				if (t.status === "resolved" && state.doc?.threads.find((previous) => previous.id === t.id)?.status !== "resolved") state.expanded.delete(t.id);
+			}
+			state.doc = doc;
 			state.error = undefined;
 		} catch (error) {
 			state.error = error.message;
@@ -184,7 +196,7 @@
 		events.addEventListener("show", (e) => {
 			const { url } = JSON.parse(e.data);
 			if (!/^http:\/\/127\.0\.0\.1:\d+\/doc\//.test(url)) return;
-			if ([...state.composers.values()].some((text) => text.trim())) {
+			if (state.editor || state.loadingSource || hasUnsavedText()) {
 				state.showLater = url;
 				render();
 			} else location.href = url;
@@ -199,6 +211,83 @@
 	}
 
 	// ---------- actions ----------
+
+	function hasUnsavedText() {
+		return (state.editor && state.editor.source !== state.editor.original) || [...state.composers.values()].some((text) => text.length > 0);
+	}
+
+	let navigationConfirmed = false;
+	function guardNavigation(event) {
+		if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || !hasUnsavedText()) return;
+		if (window.confirm("Leave this document and discard unsaved text?")) navigationConfirmed = true;
+		else event.preventDefault();
+	}
+
+	window.addEventListener("beforeunload", (event) => {
+		if (navigationConfirmed) {
+			navigationConfirmed = false;
+			return;
+		}
+		if (!hasUnsavedText()) return;
+		event.preventDefault();
+		event.returnValue = "";
+	});
+
+	async function editSource() {
+		state.loadingSource = true;
+		render();
+		try {
+			const { source, version } = await api(`/api/doc/${docId}/source`);
+			state.editor = { source, original: source, version, saving: false, error: undefined };
+			state.focus = "source";
+		} catch (error) {
+			toast(error.message);
+		} finally {
+			state.loadingSource = false;
+			render();
+		}
+	}
+
+	async function saveSource() {
+		const editor = state.editor;
+		if (!editor || editor.saving) return;
+		editor.saving = true;
+		editor.error = undefined;
+		render();
+		try {
+			await api(`/api/doc/${docId}/source`, { source: editor.source, version: editor.version });
+			state.editor = undefined;
+			await load();
+		} catch (error) {
+			editor.saving = false;
+			editor.error = error.message;
+			state.focus = "source";
+			render();
+		}
+	}
+
+	function sourceEditor() {
+		const editor = state.editor;
+		const textarea = h("textarea", {
+			id: "markdown-source",
+			"data-source-editor": true,
+			spellcheck: "false",
+			readonly: editor.saving,
+			"aria-describedby": editor.error ? "source-help source-error" : "source-help",
+			oninput: (event) => { editor.source = event.target.value; },
+		});
+		textarea.value = editor.source;
+		return h("section", { class: "source-editor", "aria-label": "Edit Markdown" },
+			h("div", { class: "source-heading" }, h("label", { for: "markdown-source" }, "Markdown source")),
+			h("p", { id: "source-help", class: "source-help" }, "You’re editing the source. Take turns: while you write, the agent reviews without editing."),
+			textarea,
+			editor.error && h("p", { id: "source-error", class: "source-error", role: "alert" }, editor.error),
+			h("div", { class: "source-actions" },
+				h("button", { class: "btn btn-primary", disabled: editor.saving, onclick: saveSource }, editor.saving ? "Saving…" : "Save"),
+				h("button", { class: "btn", disabled: editor.saving, onclick: () => { state.editor = undefined; render(); } }, "Cancel"),
+			),
+		);
+	}
 
 	function openComposer(key) {
 		if (!state.composers.has(key)) state.composers.set(key, "");
@@ -239,7 +328,7 @@
 	const resolve = (id, resolved) =>
 		act(async () => {
 			await api(`/api/doc/${docId}/threads/${id}/resolve`, { resolved });
-			if (resolved) state.expanded.delete(id);
+			if (resolved) state.expanded.set(id, false);
 		});
 
 	// ---------- rendering ----------
@@ -276,74 +365,138 @@
 		);
 	}
 
-	const STATUS_LABEL = { draft: "Draft", sent: "Waiting for reply", replied: "Replied", resolved: "Resolved" };
+	const STATUS_LABEL = { draft: "Draft", sent: "Waiting for reply", review: "Review comment", replied: "Replied", resolved: "Resolved" };
+
+	function updateSelected() {
+		app.querySelectorAll("[data-thread]").forEach((el) => el.classList.toggle("selected", Number(el.dataset.thread) === state.selected));
+		app.querySelectorAll("[data-thread-anchor]").forEach((el) => el.classList.toggle("selected", Number(el.dataset.threadAnchor) === state.selected));
+		const selected = state.doc?.threads.find((t) => t.id === state.selected);
+		app.querySelectorAll(".block").forEach((el) => el.classList.toggle("selected", el.dataset.block === selected?.attachment.blockId));
+	}
+
+	function selectThread(id, destination) {
+		state.selected = id;
+		if (destination === "thread") {
+			const card = app.querySelector(`[data-thread="${id}"]`);
+			if (card?.classList.contains("collapsed")) {
+				state.expanded.set(id, true);
+				render();
+			}
+		}
+		updateSelected();
+		const anchor = app.querySelector(`[data-thread-anchor="${id}"]`);
+		const attachment = state.doc?.threads.find((t) => t.id === id)?.attachment;
+		const passage = anchor ?? (attachment?.blockId && app.querySelector(`[data-block="${CSS.escape(attachment.blockId)}"] .block-body`));
+		const target = destination === "thread" ? app.querySelector(`[data-thread="${id}"]`) : passage;
+		if (destination === "passage" && target && !anchor) target.setAttribute("tabindex", "-1");
+		const focusTarget = destination === "thread" ? target?.querySelector("[data-thread-toggle]") : target;
+		focusTarget?.focus({ preventScroll: true });
+		target?.scrollIntoView({ block: destination === "thread" ? "start" : "center", inline: "nearest" });
+		const rail = target?.closest(".comment-rail");
+		if (rail) state.railScroll = rail.scrollTop;
+	}
 
 	function thread(t) {
-		const collapsed = t.status === "resolved" && !state.expanded.has(t.id);
+		const collapsed = !(state.expanded.get(t.id) ?? t.status !== "resolved");
 		const head = h(
 			"div",
-			{ class: "thread-head", onclick: collapsed ? () => (state.expanded.add(t.id), render()) : undefined },
+			{ class: "thread-head" },
 			h("strong", {}, `#${t.id}`),
 			h("span", { class: `badge badge-${t.status}` }, STATUS_LABEL[t.status]),
 			t.attachment.status === "section" && h("span", { class: "badge badge-outdated" }, "Text changed"),
 			t.attachment.status === "outdated" && h("span", { class: "badge badge-outdated" }, "Outdated"),
 			h("span", { class: "spacer" }),
-			collapsed && h("span", {}, `${t.messages.length} message${t.messages.length === 1 ? "" : "s"} · show`),
+			h("button", {
+				class: "btn btn-quiet thread-toggle",
+				"data-thread-toggle": t.id,
+				"aria-expanded": String(!collapsed),
+				"aria-controls": `thread-body-${t.id}`,
+				"aria-label": `${collapsed ? "Expand" : "Collapse"} thread #${t.id}`,
+				onclick: () => { state.expanded.set(t.id, collapsed); state.selected = t.id; render(); },
+			}, collapsed ? "Expand" : "Collapse"),
 		);
-		if (collapsed) return h("div", { class: "thread collapsed" }, head);
-
 		const replyKey = `thread:${t.id}`;
 		const hasDrafts = t.status === "draft";
 		return h(
 			"div",
-			{ class: "thread" },
+			{
+				class: `thread${collapsed ? " collapsed" : ""}`,
+				"data-thread": t.id,
+				onclick: (event) => {
+					if (!event.target.closest("button, a, textarea, .composer")) selectThread(t.id, "passage");
+				},
+			},
 			head,
-			t.quote && h("div", { class: "thread-quote" }, (t.diagram ? "Diagram label: " : "") + t.quote),
-			t.messages.map((m) =>
-				h(
-					"div",
-					{ class: `message message-${m.author}${m.sent ? "" : " message-draft"}` },
-					h("span", { class: "message-author" }, m.author === "agent" ? "Agent" : "You"),
-					m.text,
-				),
-			),
-			t.status === "sent" && h("div", { class: "waiting" }, "Sent to the session, waiting for a reply"),
-			state.composers.has(replyKey)
-				? composer(replyKey, "Reply…")
-				: h(
+			h("div", { id: `thread-body-${t.id}`, hidden: collapsed },
+				t.quote && h("div", { class: "thread-quote" }, (t.diagram ? "Diagram label: " : "") + t.quote),
+				t.attachment.status !== "outdated" && h("button", {
+					class: "btn btn-quiet thread-anchor-link",
+					onclick: () => selectThread(t.id, "passage"),
+					"aria-label": `Show passage for thread #${t.id}`,
+				}, "Show passage ↗"),
+				t.messages.map((m) =>
+					h(
 						"div",
-						{ class: "thread-actions" },
-						hasDrafts && h("button", { class: "btn btn-primary", onclick: () => sendThread(t.id) }, "Send"),
-						h("button", { class: "btn", onclick: () => openComposer(replyKey) }, "Reply"),
-						hasDrafts && h("button", { class: "btn btn-quiet", onclick: () => discard(t.id) }, "Discard draft"),
-						t.status === "resolved"
-							? h("button", { class: "btn btn-quiet", onclick: () => resolve(t.id, false) }, "Reopen")
-							: h("button", { class: "btn btn-quiet", onclick: () => resolve(t.id, true) }, "Resolve"),
+						{ class: `message message-${m.author}${m.sent ? "" : " message-draft"}` },
+						h("span", { class: "message-author" }, m.author === "agent" ? "Agent" : "You"),
+						m.text,
 					),
+				),
+				t.status === "sent" && h("div", { class: "waiting" }, "Sent to the session, waiting for a reply"),
+				state.composers.has(replyKey)
+					? composer(replyKey, "Reply…")
+					: h(
+							"div",
+							{ class: "thread-actions" },
+							hasDrafts && h("button", { class: "btn btn-primary", onclick: () => sendThread(t.id) }, "Send"),
+							h("button", { class: "btn", onclick: () => openComposer(replyKey) }, "Reply"),
+							hasDrafts && h("button", { class: "btn btn-quiet", onclick: () => discard(t.id) }, "Discard draft"),
+							t.status === "resolved"
+								? h("button", { class: "btn btn-quiet", onclick: () => resolve(t.id, false) }, "Reopen")
+								: h("button", { class: "btn btn-quiet", onclick: () => resolve(t.id, true) }, "Resolve"),
+						),
+			),
 		);
 	}
 
 	function block(b, threads) {
 		const body = h("div", { class: "block-body" });
 		body.innerHTML = b.html; // Server-rendered with raw HTML escaped.
-		const section = h("section", { class: `block block-${b.kind}${threads.length ? " has-threads" : ""}`, "data-block": b.id }, body);
-		/** Put el right after the highlighted text's line (inside list items), else at the end of the block. */
-		const place = (el, mark) => {
-			const host = mark && (mark.closest("li") ?? mark.closest("p, h1, h2, h3, h4, h5, h6, pre"));
-			if (host?.tagName === "LI") host.append(el);
-			else if (host && !host.closest("table")) host.after(el);
-			else section.append(el);
-		};
+		const comments = h("aside", { class: "block-comments", "data-comment-block": b.id, "aria-label": "Comments on this passage" });
 		for (const t of threads) {
-			const highlighted = t.attachment.status === "exact" && !t.diagram && t.status !== "resolved";
-			place(thread(t), highlighted ? highlight(body, t.highlight ?? t.quote, t.context, "hl", t.occurrence) : undefined);
+			if (t.attachment.status === "exact" && !t.diagram) highlight(body, t.highlight ?? t.quote, t.context, "hl", t.occurrence, t.id);
+			comments.append(thread(t));
 		}
 		for (const [key, anchor] of state.pending) {
 			if (anchor.blockId !== b.id) continue;
-			place(composer(key, "Comment…"), anchor.label ? undefined : highlight(body, anchor.quote, anchor.context, "hl hl-pending", anchor.occurrence));
+			if (!anchor.label) highlight(body, anchor.quote, anchor.context, "hl hl-pending", anchor.occurrence);
+			comments.append(composer(key, "Comment…"));
 		}
-		return section;
+		return h("section", { class: `block block-${b.kind}${threads.length ? " has-threads" : ""}`, "data-block": b.id }, body, comments);
 	}
+
+	const wideComments = matchMedia("(min-width: 1200px)");
+
+	function placeComments() {
+		const doc = app.querySelector(".doc");
+		if (!doc) return;
+		const rail = doc.querySelector(".comment-rail");
+		const focused = document.activeElement;
+		const inputScroll = focused instanceof HTMLTextAreaElement ? [focused.scrollTop, focused.scrollLeft] : undefined;
+		const scroll = [window.scrollX, window.scrollY];
+		if (wideComments.matches && rail.children.length) state.railScroll = rail.scrollTop;
+		for (const group of doc.querySelectorAll(".block-comments")) {
+			if (!group.children.length) continue;
+			const parent = wideComments.matches ? rail : doc.querySelector(`[data-block="${CSS.escape(group.dataset.commentBlock)}"]`);
+			if (group.parentElement !== parent) parent.append(group);
+		}
+		if (wideComments.matches) rail.scrollTop = state.railScroll;
+		if (focused?.isConnected && focused !== document.activeElement) focused.focus({ preventScroll: true });
+		if (inputScroll) [focused.scrollTop, focused.scrollLeft] = inputScroll;
+		window.scrollTo(...scroll);
+	}
+
+	wideComments.addEventListener("change", placeComments);
 
 	// ---------- choosing what to comment on ----------
 
@@ -448,6 +601,24 @@
 	document.addEventListener("mouseup", () => setTimeout(updateSelection));
 	document.addEventListener("keyup", (e) => e.shiftKey && updateSelection());
 
+	function activateAnchor(event) {
+		if (!(event.target instanceof Element)) return;
+		let mark = event.target.closest("[data-thread-anchor]");
+		if (!mark) return;
+		if (event.type === "keydown" && event.key !== "Enter" && event.key !== " ") return;
+		if (event.type === "click" && !window.getSelection()?.isCollapsed) return;
+		event.preventDefault();
+		const ids = [];
+		while (mark) {
+			ids.unshift(Number(mark.dataset.threadAnchor));
+			mark = mark.parentElement?.closest("[data-thread-anchor]");
+		}
+		selectThread(ids[(ids.indexOf(state.selected) + 1) % ids.length], "thread");
+	}
+
+	app.addEventListener("click", activateAnchor);
+	app.addEventListener("keydown", activateAnchor);
+
 	app.addEventListener("click", (e) => {
 		const svg = e.target instanceof Element && e.target.closest("pre.mermaid svg");
 		if (!svg) return;
@@ -472,7 +643,7 @@
 					"div",
 					{ class: "group" },
 					groups.size > 1 && h("p", { class: "group-label" }, label),
-					docs.map((d) => h("a", { href: d.url, class: d.id === docId && !d.session ? "current" : undefined }, d.path)),
+					docs.map((d) => h("a", { href: d.url, onclick: guardNavigation, class: d.id === docId && !d.session ? "current" : undefined }, d.path)),
 				),
 			),
 		);
@@ -486,9 +657,20 @@
 	}
 
 	function render() {
-		const active = document.activeElement?.dataset?.composer;
-		const caret = active ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : undefined;
+		const focused = document.activeElement;
+		const active = focused?.dataset?.composer;
+		const activeSource = focused?.hasAttribute("data-source-editor");
+		const activeToggle = focused?.dataset?.threadToggle;
+		const caret = active ? [focused.selectionStart, focused.selectionEnd, focused.selectionDirection] : undefined;
+		const inputScroll = active ? [focused.scrollTop, focused.scrollLeft] : undefined;
+		const source = app.querySelector("[data-source-editor]");
+		if (source && state.editor) {
+			state.editor.caret = [source.selectionStart, source.selectionEnd, source.selectionDirection];
+			state.editor.scroll = [source.scrollTop, source.scrollLeft];
+		}
 		const scroll = window.scrollY;
+		const rail = app.querySelector(".comment-rail");
+		if (wideComments.matches && rail?.children.length) state.railScroll = rail.scrollTop;
 
 		const doc = state.doc;
 		if (doc) document.title = doc.title;
@@ -509,12 +691,21 @@
 			}
 		}
 
-		const main = state.error
+		const main = state.editor
+			? sourceEditor()
+			: state.error
 			? h("div", { class: "error-page" }, state.error)
 			: !doc
 				? h("div", { class: "empty" }, "Loading…")
 				: [
-						h("article", { class: "doc" }, doc.blocks.map((b) => block(b, byBlock.get(b.id) ?? [])), lineAdd, selAdd),
+						h("article", { class: "doc" },
+							h("div", { class: "doc-prose" }, doc.blocks.map((b) => block(b, byBlock.get(b.id) ?? []))),
+							h("aside", {
+								class: "comment-rail", "aria-label": "Document comments", tabindex: "0",
+								onscroll: (event) => { if (wideComments.matches) state.railScroll = event.currentTarget.scrollTop; },
+							}),
+							lineAdd, selAdd,
+						),
 						stranded.length > 0 &&
 							h(
 								"section",
@@ -540,7 +731,8 @@
 						h("span", { class: "status-dot" }),
 						h("span", { class: "path" }, doc?.path ?? ""),
 						h("span", { class: "spacer" }),
-						state.showLater && h("a", { class: "btn btn-quiet", href: state.showLater }, "New document opened · view"),
+						state.showLater && h("a", { class: "btn btn-quiet", href: state.showLater, onclick: guardNavigation }, "New document opened · view"),
+						!state.editor && h("button", { class: "btn", onclick: editSource, disabled: !doc || state.loadingSource }, state.loadingSource ? "Loading…" : "Edit"),
 						h("button", { class: "btn btn-quiet", onclick: toggleTheme }, currentTheme() === "dark" ? "Light mode" : "Dark mode"),
 						h("button", { class: "btn btn-primary", disabled: drafts === 0, onclick: sendAll }, `Send all (${drafts})`),
 					),
@@ -548,18 +740,33 @@
 				),
 			),
 		);
+		placeComments();
 		renderStatus();
+		updateSelected();
 
-		if (doc?.hasMermaid) renderMermaid();
+		if (doc?.hasMermaid && !state.editor) renderMermaid();
 		window.scrollTo(0, scroll);
-		const focusKey = state.focus ?? active;
+		const requestedFocus = state.focus;
+		const focusKey = requestedFocus ?? (activeSource ? "source" : active);
 		state.focus = undefined;
-		if (focusKey) {
-			const el = document.querySelector(`[data-composer="${CSS.escape(focusKey)}"]`);
-			if (el) {
+		const editorInput = app.querySelector("[data-source-editor]");
+		if (editorInput) {
+			if (focusKey === "source") editorInput.focus({ preventScroll: true });
+			if (state.editor.caret) editorInput.setSelectionRange(...state.editor.caret);
+			if (state.editor.scroll) [editorInput.scrollTop, editorInput.scrollLeft] = state.editor.scroll;
+		}
+		if (focusKey && focusKey !== "source") {
+			const el = app.querySelector(`[data-composer="${CSS.escape(focusKey)}"]`);
+			if (el && !el.closest("[hidden]")) {
 				el.focus({ preventScroll: true });
-				if (caret && focusKey === active) el.setSelectionRange(caret[0], caret[1]);
+				if (requestedFocus && el.closest(".comment-rail")) el.scrollIntoView({ block: "nearest", inline: "nearest" });
+				if (caret && focusKey === active) {
+					el.setSelectionRange(...caret);
+					[el.scrollTop, el.scrollLeft] = inputScroll;
+				}
 			}
+		} else if (!focusKey && activeToggle) {
+			app.querySelector(`[data-thread-toggle="${activeToggle}"]`)?.focus({ preventScroll: true });
 		}
 	}
 

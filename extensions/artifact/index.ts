@@ -37,15 +37,20 @@ export function createArtifactExtension(deps: Deps) {
 			else pi.sendUserMessage(message, { deliverAs: "followUp" });
 		}
 
-		/** Show the document in an open viewer tab if there is one, else open a browser tab. */
-		async function open(ctx: SessionContext, path: string): Promise<{ url: string; reused: boolean }> {
+		async function register(ctx: SessionContext, path: string): Promise<string> {
 			session = ctx;
 			const abs = resolve(ctx.cwd, path);
 			if (!existsSync(abs) || !statSync(abs).isFile()) throw new Error(`Not a file: ${abs}`);
 			if (!server) server = new ArtifactServer({ root: deps.root, cwd: ctx.cwd, send });
 			await server.start();
-			const { url } = server.open(abs);
-			const reused = await server.showInTab(url);
+			return abs;
+		}
+
+		/** Show the document in an open viewer tab if there is one, else open a browser tab. */
+		async function open(ctx: SessionContext, path: string): Promise<{ url: string; reused: boolean }> {
+			const abs = await register(ctx, path);
+			const { url } = server!.open(abs);
+			const reused = await server!.showInTab(url);
 			if (!reused) deps.openBrowser(url);
 			return { url, reused };
 		}
@@ -69,6 +74,24 @@ export function createArtifactExtension(deps: Deps) {
 			}),
 			async execute(_id, params, _signal, _onUpdate, ctx) {
 				return text(opened(params.path, await open(ctx, params.path)));
+			},
+		});
+
+		pi.registerTool({
+			name: "artifact_comment",
+			label: "Comment on artifact",
+			description:
+				"Start an anchored review thread on a Markdown document without editing it or navigating the browser. When asked to review the user's writing, comment without editing unless they ask for revisions; take turns as author and reviewer. Quote exact rendered text (not Markdown syntax). The quote must identify one occurrence; include more text or a section if ambiguous. Plain text comments only. User responses arrive later through the artifact viewer.",
+			parameters: Type.Object({
+				file: Type.String({ description: "Document path, relative to the working directory or absolute" }),
+				quote: Type.String({ description: "Exact text as it reads on the page, with whitespace normalized" }),
+				text: Type.String({ description: "Review comment (plain text)" }),
+				section: Type.Optional(Type.String({ description: "Heading path (e.g. Tasks › Phase 1) or heading slug to disambiguate the quote" })),
+			}),
+			async execute(_id, params, _signal, _onUpdate, ctx) {
+				const abs = await register(ctx, params.file);
+				const thread = server!.comment(abs, params.quote, params.text, params.section);
+				return text(`Created review thread #${thread} on ${params.file}.`);
 			},
 		});
 

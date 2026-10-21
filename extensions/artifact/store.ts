@@ -25,7 +25,7 @@ interface ThreadFile {
 	threads: Thread[];
 }
 
-export type ThreadStatus = "draft" | "sent" | "replied" | "resolved";
+export type ThreadStatus = "draft" | "sent" | "review" | "replied" | "resolved";
 
 export interface SentDrafts {
 	thread: Thread;
@@ -39,6 +39,7 @@ export function defaultRoot(): string {
 export function threadStatus(thread: Thread): ThreadStatus {
 	if (thread.resolved) return "resolved";
 	if (thread.messages.some((m) => !m.sent)) return "draft";
+	if (thread.messages[0]?.author === "agent" && thread.messages.every((m) => m.author === "agent")) return "review";
 	return thread.messages.at(-1)?.author === "agent" ? "replied" : "sent";
 }
 
@@ -86,6 +87,17 @@ export class ThreadStore {
 			thread = { id: this.data.nextId++, anchor: input.anchor, resolved: false, messages: [message] };
 			this.data.threads.push(thread);
 		}
+		this.save();
+		return thread;
+	}
+
+	addReview(input: { anchor: Anchor; text: string }): Thread {
+		this.load();
+		const thread: Thread = {
+			id: this.data.nextId++, anchor: input.anchor, resolved: false,
+			messages: [{ author: "agent", text: input.text, at: new Date().toISOString(), sent: true }],
+		};
+		this.data.threads.push(thread);
 		this.save();
 		return thread;
 	}

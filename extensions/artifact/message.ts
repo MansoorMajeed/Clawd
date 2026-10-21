@@ -3,7 +3,7 @@ import type { SentDrafts } from "./store";
 /** The user message sent into the session when comments are sent from the browser. */
 export function formatSendMessage(displayPath: string, sent: SentDrafts[]): string {
 	const sections = sent.map(({ thread, texts }) => {
-		const { path, quote, context, diagramSource } = thread.anchor;
+		const { path, quote, context, diagramSource, movedTo } = thread.anchor;
 		const lines = [`[artifact viewer · ${displayPath} · thread #${thread.id}]`];
 		if (path) lines.push(`Section: ${path}`);
 		if (diagramSource !== undefined) {
@@ -13,7 +13,11 @@ export function formatSendMessage(displayPath: string, sent: SentDrafts[]): stri
 			lines.push(`Selected: "${quote}"`);
 			if (context && context !== quote) lines.push(`Context: "…${context}…"`);
 		}
-		return [...lines, "", texts.join("\n\n")].join("\n");
+		if (movedTo) lines.push(`Current anchor: "${movedTo}"`);
+		const review = thread.messages[0];
+		if (review?.author === "agent") lines.push("", `Agent review:\n${review.text}`);
+		const response = texts.join("\n\n");
+		return [...lines, "", review?.author === "agent" ? `User response:\n${response}` : response].join("\n");
 	});
 	return [
 		...sections,
