@@ -692,8 +692,10 @@ export function checkDangerousPattern(command: string): { description: string } 
 		const stripped = stripQuotedContent(segment);
 		const rmInvocation = parseRmSegment(segment);
 		if (!rmInvocation?.complete) {
+			// Bash drops a backslash before an ordinary letter, so `-f\r` runs as `-fr`.
+			const unescaped = stripped.replace(/\\([A-Za-z])/g, "$1");
 			for (const { pattern, description } of RM_DANGEROUS_PATTERNS) {
-				if (pattern.test(stripped)) return { description };
+				if (pattern.test(unescaped)) return { description };
 			}
 		}
 		for (const { pattern, description } of DANGEROUS_PATTERNS) {
