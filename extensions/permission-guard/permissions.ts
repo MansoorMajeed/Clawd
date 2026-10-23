@@ -611,9 +611,16 @@ export function checkHardBlock(command: string): { description: string } | null 
 // ─── Dangerous Patterns ───
 
 const RM_DANGEROUS_PATTERNS: Array<{ pattern: RegExp; description: string }> = [
-	// File deletion
-	{ pattern: /(?<![\w-])rm\s+.*-[^\s]*r[^\s]*f/, description: "rm with -rf (recursive force delete)" },
-	{ pattern: /(?<![\w-])rm\s+.*-[^\s]*f[^\s]*r/, description: "rm with -fr (recursive force delete)" },
+	// File deletion. Flags must be a whole letters-only word so operands like
+	// `my-report.pdf` or `/tmp/review-fixes.log` do not read as -rf.
+	{
+		pattern: /(?<![\w-])rm\s+(?:.*\s)?-[A-Za-z]*[rR][A-Za-z]*f[A-Za-z]*(?=$|[\s;&|()<>])/,
+		description: "rm with -rf (recursive force delete)",
+	},
+	{
+		pattern: /(?<![\w-])rm\s+(?:.*\s)?-[A-Za-z]*f[A-Za-z]*[rR][A-Za-z]*(?=$|[\s;&|()<>])/,
+		description: "rm with -fr (recursive force delete)",
+	},
 	{ pattern: /(?<![\w-])rm\s+-rf\b/, description: "rm -rf" },
 	{ pattern: /(?<![\w-])rm\s+-r\b/, description: "rm -r (recursive delete)" },
 ];
