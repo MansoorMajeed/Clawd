@@ -611,9 +611,18 @@ export function checkHardBlock(command: string): { description: string } | null 
 // ─── Dangerous Patterns ───
 
 const RM_DANGEROUS_PATTERNS: Array<{ pattern: RegExp; description: string }> = [
-	// File deletion
-	{ pattern: /(?<![\w-])rm\s+.*-[^\s]*r[^\s]*f/, description: "rm with -rf (recursive force delete)" },
-	{ pattern: /(?<![\w-])rm\s+.*-[^\s]*f[^\s]*r/, description: "rm with -fr (recursive force delete)" },
+	// File deletion. Flags must start a word and be letters, so operands like
+	// `my-report.pdf` or `-draft.txt` do not read as -rf. Only a literal that rm
+	// would reject ends the match early; anything else, such as `$V`, `{v,}` or
+	// a backtick, may still expand into a valid flag, so keep warning.
+	{
+		pattern: /(?<![\w-])rm\s+(?:.*\s)?-[A-Za-z]*[rR][A-Za-z]*f[A-Za-z]*(?![\w./+,:=@%~^#!-])/,
+		description: "rm with -rf (recursive force delete)",
+	},
+	{
+		pattern: /(?<![\w-])rm\s+(?:.*\s)?-[A-Za-z]*f[A-Za-z]*[rR][A-Za-z]*(?![\w./+,:=@%~^#!-])/,
+		description: "rm with -fr (recursive force delete)",
+	},
 	{ pattern: /(?<![\w-])rm\s+-rf\b/, description: "rm -rf" },
 	{ pattern: /(?<![\w-])rm\s+-r\b/, description: "rm -r (recursive delete)" },
 ];
@@ -685,8 +694,10 @@ export function checkDangerousPattern(command: string): { description: string } 
 		const stripped = stripQuotedContent(segment);
 		const rmInvocation = parseRmSegment(segment);
 		if (!rmInvocation?.complete) {
+			// Bash drops a backslash before an ordinary letter, so `-f\r` runs as `-fr`.
+			const unescaped = stripped.replace(/\\([A-Za-z])/g, "$1");
 			for (const { pattern, description } of RM_DANGEROUS_PATTERNS) {
-				if (pattern.test(stripped)) return { description };
+				if (pattern.test(unescaped)) return { description };
 			}
 		}
 		for (const { pattern, description } of DANGEROUS_PATTERNS) {

@@ -310,6 +310,46 @@ describe("checkDangerousPattern", () => {
 		(command) => expect(checkDangerousPattern(command)).not.toBeNull(),
 	);
 
+	it.each([
+		"rm my-report.pdf",
+		"rm -f notes-draft.txt",
+		"rm -f build/error-frames.json",
+		"rm -f /tmp/kadha-review-fixes-lint2.log",
+		"rm -- -draft.txt",
+		"rm -f -frames.json",
+		"docker compose run --rm client npm run lint > /tmp/kadha-review-fixes-lint2.log 2>&1; tail -7 /tmp/kadha-review-fixes-lint2.log",
+		"docker compose run --rm client npm test > /tmp/test-run-fail.log 2>&1; rm /tmp/test-run-fail.log",
+	])("does not mistake hyphenated rm operands for -rf: %s", (command) => {
+		expect(checkDangerousPattern(command)).toBeNull();
+	});
+
+	it.each([
+		"find . | xargs rm -rf",
+		"find . | xargs rm -fr",
+		"xargs rm -Rf < list",
+		"xargs rm -rfv",
+		"xargs rm -v -rf /tmp/foo",
+		"xargs rm /tmp/foo -rf",
+		String.raw`find /some/path -print0 | xargs -0 rm -f\r`,
+		String.raw`xargs rm -\r\f /tmp/foo`,
+		String.raw`xargs rm -\R\f /tmp/foo`,
+		'xargs rm -f""r /tmp/foo',
+		"echo `find . | xargs rm -fr`",
+		"find ./build -print0 | xargs -0 rm -fr${VERBOSE}",
+		"xargs rm -fr$(printf v)",
+		"xargs rm -fr{v,}",
+		"xargs rm -fr* /tmp/foo",
+		"(rm -rf /tmp/foo)",
+		"$(rm -rf /tmp/foo)",
+		"/bin/rm -rf /tmp/foo",
+		"true &rm -rf /tmp/foo",
+		"find . | xargs \\rm -rf /tmp/foo",
+		"case x in x)rm -rf /tmp/foo;; esac",
+		"$(true)rm -rf /tmp/foo",
+	])("retains fallback recursive force rm warnings in %s", (command) => {
+		expect(checkDangerousPattern(command)).not.toBeNull();
+	});
+
 	it("catches docker rm", () => {
 		expect(checkDangerousPattern("docker rm -f container")).not.toBeNull();
 	});
