@@ -332,6 +332,7 @@ describe("checkDangerousPattern", () => {
 		String.raw`xargs rm -\r\f /tmp/foo`,
 		String.raw`xargs rm -\R\f /tmp/foo`,
 		'xargs rm -f""r /tmp/foo',
+		"echo `find . | xargs rm -fr`",
 		"(rm -rf /tmp/foo)",
 		"$(rm -rf /tmp/foo)",
 		"/bin/rm -rf /tmp/foo",

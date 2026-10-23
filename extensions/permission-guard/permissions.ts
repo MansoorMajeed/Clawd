@@ -614,11 +614,11 @@ const RM_DANGEROUS_PATTERNS: Array<{ pattern: RegExp; description: string }> = [
 	// File deletion. Flags must be a whole letters-only word so operands like
 	// `my-report.pdf` or `/tmp/review-fixes.log` do not read as -rf.
 	{
-		pattern: /(?<![\w-])rm\s+(?:.*\s)?-[A-Za-z]*[rR][A-Za-z]*f[A-Za-z]*(?=$|[\s;&|()<>])/,
+		pattern: /(?<![\w-])rm\s+(?:.*\s)?-[A-Za-z]*[rR][A-Za-z]*f[A-Za-z]*(?=$|[\s;&|()<>`])/,
 		description: "rm with -rf (recursive force delete)",
 	},
 	{
-		pattern: /(?<![\w-])rm\s+(?:.*\s)?-[A-Za-z]*f[A-Za-z]*[rR][A-Za-z]*(?=$|[\s;&|()<>])/,
+		pattern: /(?<![\w-])rm\s+(?:.*\s)?-[A-Za-z]*f[A-Za-z]*[rR][A-Za-z]*(?=$|[\s;&|()<>`])/,
 		description: "rm with -fr (recursive force delete)",
 	},
 	{ pattern: /(?<![\w-])rm\s+-rf\b/, description: "rm -rf" },
