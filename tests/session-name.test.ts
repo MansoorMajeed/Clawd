@@ -1,110 +1,139 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import registerSessionName from "../extensions/session-name";
 
-function userMessage(content: string | Array<{ type: string; text?: string }>) {
-	return { type: "message", message: { role: "user", content, timestamp: Date.now() } };
+function namedResult(name: string) {
+	return {
+		type: "message",
+		message: { role: "toolResult", toolName: "set_session_name", details: { name }, isError: false, timestamp: Date.now() },
+	};
 }
 
-function setup(options: {
-	currentName?: string;
-	entries?: any[];
-	editedName?: string;
-	model?: any;
-	response?: string;
-} = {}) {
+function setup(options: { currentName?: string; entries?: any[] } = {}) {
 	let command: any;
-	const setSessionName = vi.fn();
+	let sessionStart: any;
+	const tools: any[] = [];
+	let currentName = options.currentName;
+	const setSessionName = vi.fn((name: string) => { currentName = name; });
+	const sendMessage = vi.fn();
 	const notify = vi.fn();
-	const editor = vi.fn().mockResolvedValue(options.editedName ?? "Improve session naming");
-	const complete = vi.fn().mockResolvedValue({
-		content: [{ type: "text", text: options.response ?? "Improve Session Naming" }],
+	const ctx = (mode = "tui") => ({
+		mode,
+		hasUI: mode !== "print",
+		sessionManager: { getBranch: () => options.entries ?? [] },
+		ui: { notify },
 	});
-	const model = options.model === undefined
-		? { id: "test-model", provider: "test", api: "openai-responses", reasoning: true }
-		: options.model;
-	const ctx = {
-		hasUI: true,
-		model,
-		modelRegistry: { complete },
-		sessionManager: {
-			getBranch: () => options.entries ?? [userMessage("Make session names easier to see and organize")],
-		},
-		ui: { editor, notify },
-	};
 	registerSessionName({
 		registerCommand: (name: string, definition: any) => {
 			if (name === "suggest-name") command = definition;
 		},
-		getSessionName: () => options.currentName,
+		registerTool: (definition: any) => tools.push(definition),
+		on: (event: string, handler: any) => {
+			if (event === "session_start") sessionStart = handler;
+		},
+		getSessionName: () => currentName,
 		setSessionName,
+		sendMessage,
 	} as any);
-	return { command, complete, ctx, editor, notify, setSessionName };
+	const run = (params: any, mode = "tui") => tools[0].execute("call-1", params, undefined, undefined, ctx(mode));
+	return { command, sessionStart, tools, ctx, run, setSessionName, sendMessage, notify };
 }
+
+describe("set_session_name tool", () => {
+	beforeEach(() => vi.clearAllMocks());
+
+	it("registers only for interactive TUI sessions, once", async () => {
+		const h = setup();
+		await h.sessionStart({}, h.ctx("print"));
+		await h.sessionStart({}, h.ctx("rpc"));
+		expect(h.tools).toHaveLength(0);
+
+		await h.sessionStart({}, h.ctx("tui"));
+		await h.sessionStart({}, h.ctx("tui"));
+		expect(h.tools).toHaveLength(1);
+		expect(h.tools[0].name).toBe("set_session_name");
+		expect(h.tools[0].promptGuidelines.join(" ")).toContain("set_session_name");
+	});
+
+	it("names an unnamed session and cleans up the name", async () => {
+		const h = setup();
+		await h.sessionStart({}, h.ctx());
+
+		const result = await h.run({ name: "  \"Auto Session\nNaming\"  " });
+
+		expect(h.setSessionName).toHaveBeenCalledWith("Auto Session Naming");
+		expect(result.isError).toBeFalsy();
+		expect(result.details).toEqual({ name: "Auto Session Naming" });
+	});
+
+	it("renames a session it named earlier, even after a resume", async () => {
+		const h = setup({ currentName: "Old Auto Name", entries: [namedResult("Old Auto Name")] });
+		await h.sessionStart({}, h.ctx());
+
+		await h.run({ name: "New Focus" });
+
+		expect(h.setSessionName).toHaveBeenCalledWith("New Focus");
+	});
+
+	it("refuses to overwrite a name the user set", async () => {
+		const h = setup({ currentName: "My Name", entries: [namedResult("Something Else")] });
+		await h.sessionStart({}, h.ctx());
+
+		const result = await h.run({ name: "Agent Name" });
+
+		expect(h.setSessionName).not.toHaveBeenCalled();
+		expect(result.isError).toBe(true);
+	});
+
+	it("rejects an empty name", async () => {
+		const h = setup();
+		await h.sessionStart({}, h.ctx());
+
+		const result = await h.run({ name: " \"\" " });
+
+		expect(h.setSessionName).not.toHaveBeenCalled();
+		expect(result.isError).toBe(true);
+	});
+});
 
 describe("suggest-name command", () => {
 	beforeEach(() => vi.clearAllMocks());
 
-	it("generates from the first user request and sets the edited suggestion", async () => {
-		const h = setup({
-			currentName: "Old name",
-			entries: [
-				userMessage([{ type: "image" }, { type: "text", text: "  Organize my Pi sessions  " }]),
-				userMessage("Ignore this later request"),
-			],
-			editedName: "Organize\nPi sessions",
-			response: "\"Pi Session Organization\"\n",
-		});
+	it("asks the main agent to name the session and allows one override of a user name", async () => {
+		const h = setup({ currentName: "My Name" });
+		await h.sessionStart({}, h.ctx());
 
-		await h.command.handler("", h.ctx);
+		await h.command.handler("", h.ctx());
 
-		expect(h.complete).toHaveBeenCalledWith(
-			h.ctx.model,
-			expect.objectContaining({ messages: [expect.objectContaining({ role: "user" })] }),
-			expect.objectContaining({ maxTokens: 32, cacheRetention: "none" }),
+		expect(h.sendMessage).toHaveBeenCalledWith(
+			expect.objectContaining({ customType: "suggest-name", content: expect.stringContaining("set_session_name") }),
+			{ triggerTurn: true, deliverAs: "followUp" },
 		);
-		expect(h.complete.mock.calls[0][1].messages[0].content[0].text).toContain("Organize my Pi sessions");
-		expect(h.editor).toHaveBeenCalledWith("Rename session", "Pi Session Organization");
-		expect(h.setSessionName).toHaveBeenCalledWith("Organize Pi sessions");
-		expect(h.notify).toHaveBeenCalledWith("Session named: Organize Pi sessions", "info");
+
+		await h.run({ name: "Agent Name" });
+		expect(h.setSessionName).toHaveBeenCalledWith("Agent Name");
 	});
 
-	it("leaves the session unchanged when editing is cancelled", async () => {
-		const h = setup();
-		h.editor.mockResolvedValue(undefined);
+	it("consumes the override after one call", async () => {
+		const h = setup({ currentName: "My Name" });
+		await h.sessionStart({}, h.ctx());
+		await h.command.handler("", h.ctx());
 
-		await h.command.handler("", h.ctx);
+		await h.run({ name: "Agent Name" });
+		h.setSessionName.mockClear();
+		// The user renames again manually; the earlier override must not carry over.
+		h.setSessionName("User Again");
+		h.setSessionName.mockClear();
+		const result = await h.run({ name: "Another Agent Name" });
 
 		expect(h.setSessionName).not.toHaveBeenCalled();
-		expect(h.notify).toHaveBeenCalledWith("Session naming cancelled", "info");
+		expect(result.isError).toBe(true);
 	});
 
-	it("reports missing input, missing models, and model failures without changing the name", async () => {
-		const noInput = setup({ entries: [] });
-		await noInput.command.handler("", noInput.ctx);
-		expect(noInput.notify).toHaveBeenCalledWith("Send a request before suggesting a session name", "warning");
-		expect(noInput.complete).not.toHaveBeenCalled();
+	it("does nothing outside interactive TUI sessions", async () => {
+		const h = setup();
+		await h.command.handler("", h.ctx("rpc"));
 
-		const noModel = setup({ model: null });
-		await noModel.command.handler("", noModel.ctx);
-		expect(noModel.notify).toHaveBeenCalledWith("No active model available", "warning");
-
-		for (const stopReason of ["error", "aborted"] as const) {
-			const resolvedFailure = setup();
-			resolvedFailure.complete.mockResolvedValue({
-				stopReason,
-				errorMessage: "provider unavailable",
-				content: [{ type: "text", text: "Partial Bad Name" }],
-			});
-			await resolvedFailure.command.handler("", resolvedFailure.ctx);
-			expect(resolvedFailure.notify).toHaveBeenCalledWith("Could not suggest a session name: provider unavailable", "error");
-			expect(resolvedFailure.editor).not.toHaveBeenCalled();
-			expect(resolvedFailure.setSessionName).not.toHaveBeenCalled();
-		}
-
-		const rejected = setup();
-		rejected.complete.mockRejectedValue(new Error("request setup failed"));
-		await rejected.command.handler("", rejected.ctx);
-		expect(rejected.notify).toHaveBeenCalledWith("Could not suggest a session name: request setup failed", "error");
-		expect(rejected.setSessionName).not.toHaveBeenCalled();
+		expect(h.sendMessage).not.toHaveBeenCalled();
+		expect(h.notify).toHaveBeenCalledWith(expect.stringContaining("interactive"), "warning");
 	});
 });

@@ -17,7 +17,7 @@ Custom Pi coding agent package — lean system prompt, opinionated workflow. Inc
   - `context/` — `/context` viewer for loaded command extensions and skills, active-context usage, cost, and estimated category breakdowns
   - `session-breakdown.ts` — 7/30/90-day session analytics: tokens, cost, model breakdown, calendar heatmap
   - `footer.ts` — Theme-aware native footer replacement: highlighted session names, unnamed-session reminders, left-aligned model, context usage, estimated session cost, and preserved extension statuses. Context warnings follow configured compaction headroom; narrow layouts wrap.
-  - `session-name.ts` — `/suggest-name` generates a short name from the first user request with the active model, then lets the user edit it before saving.
+  - `session-name.ts` — In TUI sessions only, registers a `set_session_name` tool so the main agent names the session once the task is clear, and renames it if the focus changes. It refuses to overwrite user-set names: a name counts as agent-set only if it matches the last `set_session_name` result in the branch. `/suggest-name` asks the agent to call the tool now, and that one call may replace a user-set name.
   - `session-meter.ts` — Session age indicator without estimated hourly cost
   - `token-tps.ts` — Labeled response throughput and duration-weighted average, including provider waiting/thinking time
   - `chatgpt-limit-status.ts` — ChatGPT quota and reset status
